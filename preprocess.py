@@ -15,6 +15,8 @@ def parse_args() -> argparse.Namespace:
         '-i','--input', type=str, default='data/dev/fallacy_corpus.json', help='File to pre-process', )
 
     parser.add_argument('-o','--output', type=str, default='data/dev/fallacy_corpus.jsonl', help='Output filename',)
+
+    parser.add_argument('-s', '--shuffle', action='store_true', help='Shuffle the dataset',)
     
     return parser.parse_args()
 
@@ -58,6 +60,10 @@ def main() -> None:
 
     # convert the format
     fallacy_corpus_df = change_format(fallacy_corpus)
+
+    # shuffle if the flag is set
+    if args.shuffle:
+        fallacy_corpus_df = fallacy_corpus_df.sample(frac=1, random_state=123)
     
     # save the new format to a jsonl file
     fallacy_corpus_df.to_json(args.output, orient='records', lines=True)
