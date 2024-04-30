@@ -15,7 +15,8 @@ class Fallacy:
     labels: list[str]
 
     def __str__(self) -> str:
-        return f'Text: "{self.text}"\nLabel(s): "{self.labels}"'
+        text = self.text.rstrip('\n')
+        return f'Text: "{text}"\nLabel(s): "{self.labels}"'
 
     def get_zero_shot_prompt(self, fallacy_options: list[str]) -> str:
         """Return the zero-shot prompt"""
@@ -54,7 +55,7 @@ def parse_args() -> argparse.Namespace:
         '-m',
         '--model', 
         type=str, 
-        default='google/flan-t5-small', 
+        default='google/flan-t5-small',
         help='Model to prompt'
     )
 
@@ -62,7 +63,7 @@ def parse_args() -> argparse.Namespace:
         '-d',
         '--dataset',
         type=str,
-        default='data/dev/fallacy_corpus.jsonl', 
+        default='data/dev/fallacy_corpus.jsonl',
         help='Fallacy dataset to prompt for'
     )
 
@@ -120,10 +121,17 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
     
     correct = 0
 
-    for fallacy, generated_text in zip(fallacies, generated_texts):
-        # TODO improve the comparison code below
-        if any([label for label in fallacy.labels if label in generated_text]):
-            correct += 1
+    with open(logpath, 'w', encoding='utf-8') as outp:
+        for fallacy, generated_text in zip(fallacies, generated_texts):
+            # write to logfile
+            outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
+            
+            # TODO improve the comparison code below
+            if any([label for label in fallacy.labels if label in generated_text.lower()]):
+                correct += 1
+                outp.write('-> correct\n\n')
+            else:
+                outp.write('-> incorrect\n\n')
 
     print(f'Got {correct} out of {len(fallacies)} correct')
 
@@ -131,7 +139,6 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         with open(logpath, 'a', encoding='utf-8') as outp:
             outp.write(f'Got {correct} out of {len(fallacies)} correct\n')
         
-
 
 def main() -> None:
     """A script to prompt seq2seq LLMs for fallacy detection"""
