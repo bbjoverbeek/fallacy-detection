@@ -42,8 +42,12 @@ wget https://raw.githubusercontent.com/ChadiHelwe/MAFALDA/main/datasets/gold_sta
 
 #### Prompt the model:
 
-_Run different prompts by altering the command-line arguments. see `python3 prompt_model.py --help for options`_
+_Run different prompts by altering the command-line arguments. see `python3 prompt_model.py --help` for options_
 
 ```bash
 python3 prompt_model.py --input data/test/mafalda_gold_standard_dataset.jsonl
 ```
+
+### Reproducible tests:
+
+To make the tests reproducible we have created [`run_experiment.sh`](./run_experiment.sh). This script will set up a folder containing all the necessary files to run the experiment. The script will also run the experiment and save the results in a logfile. The model and the prompt can be changed in the script.
