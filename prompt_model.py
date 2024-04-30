@@ -12,10 +12,10 @@ from tqdm import tqdm
 class Fallacy:
     """A dataclass to hold the fally text and their corresponding labels."""
     text: str
-    label: str
+    labels: list[str]
 
     def __str__(self) -> str:
-        return f'Text: "{self.text}"\nLabel: "{self.label}"'
+        return f'Text: "{self.text}"\nLabel(s): "{self.labels}"'
 
     def get_zero_shot_prompt(self, fallacy_options: list[str]) -> str:
         """Return the zero-shot prompt"""
@@ -71,7 +71,7 @@ def parse_args() -> argparse.Namespace:
         '--logpath',
         default='',
         type=str,
-        help='Log file to write the results to'
+        help='Log file to write the output and results to'
     )
 
     return parser.parse_args()
@@ -87,7 +87,7 @@ def load_dataset(dataset_path: str) -> list[Fallacy]:
 
     for line in dataset:
         example = json.loads(line)
-        fallacies.append(Fallacy(example['text'], example['labels'][0][2]))
+        fallacies.append(Fallacy(example['text'], [label[2] for label in example['labels']]))
     
     return fallacies
 
@@ -95,7 +95,11 @@ def load_dataset(dataset_path: str) -> list[Fallacy]:
 def prompt_model(pipe: pipeline, fallacies: list[Fallacy], logpath: str) -> list[str]:
     """Prompt the model for all fallacies"""
 
-    fallacy_options = {fallacy.label for fallacy in fallacies}
+    # get all possible labels to use in the prompt
+    fallacy_options = set()
+    for fallacy in fallacies:
+        for label in fallacy.labels:
+            fallacy_options.add(label)
 
     generated_texts = []
     for fallacy in tqdm(fallacies, desc='Prompting model', leave=False):
@@ -111,17 +115,22 @@ def prompt_model(pipe: pipeline, fallacies: list[Fallacy], logpath: str) -> list
     return generated_texts
 
 
-def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str]) -> None:
+def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str], logpath: str) -> None:
     """Checks if the model prediction is correct, and prints the number of correct predictions."""
     
     correct = 0
 
     for fallacy, generated_text in zip(fallacies, generated_texts):
         # TODO improve the comparison code below
-        if fallacy.label in generated_text:
+        if any([label for label in fallacy.labels if label in generated_text]):
             correct += 1
 
     print(f'Got {correct} out of {len(fallacies)} correct')
+
+    if logpath:
+        with open(logpath, 'a', encoding='utf-8') as outp:
+            outp.write(f'Got {correct} out of {len(fallacies)} correct\n')
+        
 
 
 def main() -> None:
@@ -140,7 +149,7 @@ def main() -> None:
             for fallacy, generated_text in zip(fallacies, generated_texts):
                 outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n\n')
 
-    evaluate_generated_texts(fallacies, generated_texts)
+    evaluate_generated_texts(fallacies, generated_texts, args.logpath)
     
 if __name__ == '__main__':
     main()
