@@ -71,6 +71,6 @@ source $ENV_FOLDER"/bin/activate"
 # call the script with the correct arguments
 python3 $EXPERIMENT_FOLDER"prompt_model.py" \
         --model $MODEL \
-        -prompt-features zero-shot chain-of-thought \
+        --prompt-features zero-shot chain-of-thought \
         --dataset $EXPERIMENT_FOLDER$(basename $DATASET) \
         --logpath $EXPERIMENT_FOLDER"log.txt"
