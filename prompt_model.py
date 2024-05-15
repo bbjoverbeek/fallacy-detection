@@ -8,6 +8,8 @@ from typing import Literal, get_args
 from tqdm import tqdm
 from enum import Enum
 import torch
+import re
+from collections import Counter
 
 # TODO: find way to truncate the generated text if too long for the model
 PromptFeature = Literal['zero-shot', 'few-shot', 'chain-of-thought', 'self-consistency', 'positive-feedback', 'negative-feedback']
@@ -25,7 +27,7 @@ class Fallacy:
     def get_base_prompt(self, fallacy_options: list[str]) -> str:
         """Return the basic prompt"""
 
-        prompt = f'What logical fallacy is used here?"\n{self.fallacy_text}"\nThe options are: {fallacy_options}.'
+        prompt = f'What logical fallacy is used here?\nThe options are: {fallacy_options}.\n Text: "\n{self.fallacy_text}"'
 
         return prompt
 
@@ -36,8 +38,9 @@ class Fallacy:
     def get_chain_of_thought_prompt(self, prompt: str) -> str:
         """Alter the prompt to include chain of thought"""
 
-        prompt = f'{prompt}\nLet\'s think in steps'
-        
+        # prompt = f'{prompt}\nLet\'s think in steps'
+        prompt = f'{prompt}\nPlease also explain your thinking steps.'
+
         return prompt
 
     # Note that the self-consistency prompt is the same as the chain of thought prompt
@@ -164,17 +167,23 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str) -> list[str]:
     for prompt in tqdm(prompts, desc='Prompting model', leave=False):
         generated_text = pipe(
             prompt,
-            do_sample=True, 
-            temperature=0.7, 
-            top_k=40, 
+            do_sample=True,
+            temperature=0.7,
+            top_k=40,
             max_new_tokens=200
         )
         generated_texts.append(generated_text[0]['generated_text'])
 
+        # temp code
+        # print generated text and the prompt
+        print(f'Prompt: "{prompt}"\nGenerated text: "{generated_text[0]["generated_text"]}"\n')
+        # print model answer to test the extract_model_answer function
+        print(f'Model answer: "{extract_model_answer(generated_text[0]["generated_text"], ["slippery slope","X appeal to majority", "ad hominem", "appeal to (false) authority", "nothing"])}"\n')
+
     return generated_texts
 
 
-def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str], logpath: str) -> None:
+def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str], logpath: str, fallacy_options) -> None:
     """Checks if the model prediction is correct, and prints the number of correct predictions."""
     
     correct = 0
@@ -204,6 +213,35 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         with open(logpath, 'a', encoding='utf-8') as outp:
             outp.write(f'Got {correct} out of {len(fallacies)} correct\n')
         
+def extract_model_answer(generated_text, fallacy_options):
+    """Extract the answer from generated text based on specified patterns or by frequency of occurrence."""
+    # Normalize the generated text for more reliable matching
+    normalized_text = generated_text.lower()
+
+    # Pattern to capture 'answer is' or 'answer is:'
+    pattern = re.compile(r"answer is:?\s*([\w\s]+)", re.IGNORECASE)
+    match = pattern.search(normalized_text)
+    if match:
+        answer = match.group(1).strip()
+        # Check if the extracted answer is a close match to any of the fallacy options
+        for option in fallacy_options:
+            if answer in option.lower():
+                return option  # Return the matching fallacy option as it is in the list
+        # If no close match, consider the raw extracted answer (This part could be refined)
+        return answer
+
+    # If no explicit answer pattern is found, look for the most mentioned fallacy in the options
+    # Count occurrences of each fallacy option in the normalized text
+    fallacy_count = {option: normalized_text.count(option.lower()) for option in fallacy_options}
+
+    # Find the fallacy with the highest count in the text, if any are mentioned
+    if fallacy_count:
+        most_common_fallacy = max(fallacy_count, key=fallacy_count.get)
+        if fallacy_count[most_common_fallacy] > 0:
+            return most_common_fallacy  # Return the most common fallacy that actually appears
+
+    return None  # Return None if no fallacies are mentioned or no pattern is matched
+
 
 def main() -> None:
     """A script to prompt seq2seq LLMs for fallacy detection"""
@@ -212,6 +250,8 @@ def main() -> None:
         device = 'cuda'
     else:
         device = 'cpu'
+
+    device = 'cpu'
 
     args = parse_args()
 
@@ -227,7 +267,7 @@ def main() -> None:
             for fallacy, generated_text in zip(fallacies, generated_texts):
                 outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n\n')
 
-    evaluate_generated_texts(fallacies, generated_texts, args.logpath)
+    evaluate_generated_texts(fallacies, generated_texts, args.logpath. fallacy_options)
     
 if __name__ == '__main__':
     main()
