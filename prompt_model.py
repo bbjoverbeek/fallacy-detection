@@ -176,9 +176,9 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str) -> list[str]:
 
         # temp code
         # print generated text and the prompt
-        print(f'Prompt: "{prompt}"\nGenerated text: "{generated_text[0]["generated_text"]}"\n')
-        # print model answer to test the extract_model_answer function
-        print(f'Model answer: "{extract_model_answer(generated_text[0]["generated_text"], ["slippery slope","X appeal to majority", "ad hominem", "appeal to (false) authority", "nothing"])}"\n')
+        # print(f'Prompt: "{prompt}"\nGenerated text: "{generated_text[0]["generated_text"]}"\n')
+        # # print model answer to test the extract_model_answer function
+        # print(f'Model answer: "{extract_model_answer(generated_text[0]["generated_text"], ["slippery slope","X appeal to majority", "ad hominem", "appeal to (false) authority", "nothing"])}"\n')
 
     return generated_texts
 
@@ -196,9 +196,12 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
     for fallacy, generated_text in zip(fallacies, generated_texts):
         # write to logfile
         outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
-        
-        # TODO improve the comparison code below
-        if any([label for label in fallacy.labels if label in generated_text.lower()]):
+
+        # extract the model answer
+        model_answer = extract_model_answer(generated_text, fallacy_options)
+
+        # Check if the extracted answer is one of the labels
+        if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
             correct += 1
             outp.write('-> correct\n\n')
         else:
@@ -251,7 +254,7 @@ def main() -> None:
     else:
         device = 'cpu'
 
-    device = 'cpu'
+    # device = 'cpu'
 
     args = parse_args()
 
