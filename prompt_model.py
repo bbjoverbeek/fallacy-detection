@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Literal, get_args
 from tqdm import tqdm
 from enum import Enum
+import torch
 
 # TODO: find way to truncate the generated text if too long for the model
 PromptFeature = Literal['zero-shot', 'few-shot', 'chain-of-thought', 'self-consistency', 'positive-feedback', 'negative-feedback']
@@ -207,13 +208,18 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
 def main() -> None:
     """A script to prompt seq2seq LLMs for fallacy detection"""
 
+    if torch.cuda.is_available():
+        device = 'cuda'
+    else:
+        device = 'cpu'
+
     args = parse_args()
 
     fallacies = load_dataset(args.dataset)
     fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.n_shot) for fallacy in fallacies]
 
-    pipe = pipeline('text2text-generation', model=args.model)
+    pipe = pipeline('text2text-generation', model=args.model, device=device)
     generated_texts = prompt_model(pipe, prompts, args.logpath)
 
     if args.logpath:
