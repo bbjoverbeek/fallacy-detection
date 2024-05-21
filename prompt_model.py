@@ -9,7 +9,10 @@ from tqdm import tqdm
 from enum import Enum
 import torch
 import re
+import os
 from collections import Counter
+import random
+random.seed(42)
 
 # TODO: find way to truncate the generated text if too long for the model
 PromptFeature = Literal['zero-shot', 'few-shot', 'chain-of-thought', 'self-consistency', 'positive-feedback', 'negative-feedback']
@@ -124,6 +127,14 @@ def parse_args() -> argparse.Namespace:
         help='Number of examples to show in the few-shot prompt'
     )
 
+    parser.add_argument(
+        '-s',
+        '--samples',
+        type=int,
+        default=0,
+        help='Number of samples to classify'
+    )
+
     # parse args
     args = parser.parse_args()
 
@@ -141,6 +152,9 @@ def parse_args() -> argparse.Namespace:
         
     if 'positive-feedback' in args.prompt_features and 'negative-feedback' in args.prompt_features:
         parser.error('positive-feedback and negative-feedback prompt types cannot be used together')
+        
+    if args.samples < 5:
+        parser.error('The number of samples can not be smaller than the number of types of fallacies')
 
     return args
 
@@ -186,7 +200,7 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str) -> list[str]:
 def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str], logpath: str, fallacy_options) -> None:
     """Checks if the model prediction is correct, and prints the number of correct predictions."""
     
-    correct = 0
+    correct = []
     
     if logpath:
         outp = open(logpath, 'w')
@@ -202,19 +216,22 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
 
         # Check if the extracted answer is one of the labels
         if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
-            correct += 1
+            correct.append(1)
             outp.write('-> correct\n\n')
         else:
+            correct.append(0)
             outp.write('-> incorrect\n\n')
     
     if logpath:
         outp.close()
 
-    print(f'Got {correct} out of {len(fallacies)} correct')
+    print(f'Got {sum(correct)} out of {len(fallacies)} correct')
 
     if logpath:
         with open(logpath, 'a', encoding='utf-8') as outp:
-            outp.write(f'Got {correct} out of {len(fallacies)} correct\n')
+            outp.write(f'Got {sum(correct)} out of {len(fallacies)} correct\n')
+
+    return correct
         
 def extract_model_answer(generated_text, fallacy_options):
     """Extract the answer from generated text based on specified patterns or by frequency of occurrence."""
@@ -245,6 +262,48 @@ def extract_model_answer(generated_text, fallacy_options):
 
     return None  # Return None if no fallacies are mentioned or no pattern is matched
 
+def get_balanced_fallacies(fallacies, fallacy_options, n):
+    if n == 0: n = len(fallacies)
+    balanced_fallacies = []
+    counts = dict.fromkeys(fallacy_options,0)
+    n_class = n//len(fallacy_options)
+    r = list(range(len(fallacies)))
+    random.shuffle(r)
+    for i in r:
+        if counts[fallacies[i].labels[0]] < n_class:
+            balanced_fallacies.append(fallacies[i])
+            counts[fallacies[i].labels[0]] += 1
+            n -= 1
+        if n < 0: break
+    random.shuffle(balanced_fallacies)
+    return balanced_fallacies
+
+# https://stackoverflow.com/questions/13852700/create-file-but-if-name-exists-add-number
+def uniquify(path):
+    filename, extension = os.path.splitext(path)
+    counter = 1
+
+    while os.path.exists(path):
+        path = filename + " (" + str(counter) + ")" + extension
+        counter += 1
+
+    return path
+
+def save_results(correct, prompt_frame, generated_texts, fallacies, args):
+    results = {'correct': correct,
+              'prompt_frame': prompt_frame,
+              'generated_texts': generated_texts,
+              'fallacy_texts': [f.fallacy_text for f in fallacies],
+              'fallacy_labels': [f.labels for f in fallacies],
+              'model': args.model,
+              'prompt_features': args.prompt_features,
+              'n': len(fallacies)
+              }
+    
+    filename = uniquify(args.model.split("/")[-1] + '-' + str(len(fallacies)) + '-' + '-'.join(args.prompt_features) + '.txt')
+    
+    with open(filename, 'w') as f:
+        f.write(json.dumps(results)) 
 
 def main() -> None:
     """A script to prompt seq2seq LLMs for fallacy detection"""
@@ -260,6 +319,12 @@ def main() -> None:
 
     fallacies = load_dataset(args.dataset)
     fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
+
+    # print(Counter([fallacy.labels[0] for fallacy in fallacies]))
+    fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
+
+    empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
+    prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.n_shot)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.n_shot) for fallacy in fallacies]
 
     pipe = pipeline('text2text-generation', model=args.model, device=device)
@@ -270,7 +335,9 @@ def main() -> None:
             for fallacy, generated_text in zip(fallacies, generated_texts):
                 outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n\n')
 
-    evaluate_generated_texts(fallacies, generated_texts, args.logpath. fallacy_options)
+    correct = evaluate_generated_texts(fallacies, generated_texts, args.logpath, fallacy_options)
+    save_results(correct, prompt_frame, generated_texts, fallacies, args)
+    
     
 if __name__ == '__main__':
     main()
