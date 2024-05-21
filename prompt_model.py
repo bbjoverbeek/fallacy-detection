@@ -31,7 +31,20 @@ class Fallacy:
     def get_base_prompt(self, fallacy_options: list[str]) -> str:
         """Return the basic prompt"""
 
-        prompt = f'What logical fallacy is used here?\nThe options are: {fallacy_options}.\n Text: "\n{self.fallacy_text}"'
+        # prompt = f'What logical fallacy is used here?\nThe options are: {fallacy_options}.\n Text: "\n{self.fallacy_text}"'
+
+        # MFALDA prompt
+        sep = "\n- "
+        fallacy_options_string = sep+sep.join(fallacy_options)
+        prompt = f"""Definitions:
+- An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument.
+- A fallacious argument is an argument where the premises do not entail the conclusion.
+Text: "{self.fallacy_text}"
+Based on the above text, determine whether the following sentence is part of a fallacious argument or not. If it is, indicate the type(s) of fallacy without providing explanations. The potential types of fallacy include:
+{fallacy_options_string}
+Sentence: "{self.fallacy_text}"
+Output:
+"""
 
         return prompt
 
@@ -132,8 +145,15 @@ def parse_args() -> argparse.Namespace:
         '-s',
         '--samples',
         type=int,
-        default=0,
-        help='Number of samples to classify'
+        default=99999,
+        help='(Maximum) number of samples to classify'
+    )
+
+    parser.add_argument(
+        '-c',
+        '--force-cpu',
+        action=argparse.BooleanOptionalAction,
+        help='Use cpu even when gpu is available'
     )
 
     # parse args
@@ -215,6 +235,9 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         # extract the model answer
         model_answer = extract_model_answer(generated_text, fallacy_options)
 
+        # default answer is 'nothing'
+        if not model_answer: model_answer = 'nothing'
+
         # Check if the extracted answer is one of the labels
         if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
             correct.append(1)
@@ -264,10 +287,13 @@ def extract_model_answer(generated_text, fallacy_options):
     return None  # Return None if no fallacies are mentioned or no pattern is matched
 
 def get_balanced_fallacies(fallacies, fallacy_options, n):
-    if n == 0: n = len(fallacies)
     balanced_fallacies = []
     counts = dict.fromkeys(fallacy_options,0)
     n_class = n//len(fallacy_options)
+    # c = Counter([fallacy.labels[0] for fallacy in fallacies])
+    # for key, count in [(key, count) for key, count in c.items() if count < n_class]:
+    # min_c = min(c, key=c.get)
+
     r = list(range(len(fallacies)))
     random.shuffle(r)
     for i in r:
@@ -308,15 +334,14 @@ def save_results(correct, prompt_frame, generated_texts, fallacies, args):
 
 def main() -> None:
     """A script to prompt seq2seq LLMs for fallacy detection"""
+    args = parse_args()
 
-    if torch.cuda.is_available():
+    if not args.force_cpu and torch.cuda.is_available():
         device = 'cuda'
     else:
         device = 'cpu'
 
-    device = 'cpu'
-
-    args = parse_args()
+    print(device)
 
     fallacies = load_dataset(args.dataset)
     fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
