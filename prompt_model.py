@@ -1,3 +1,4 @@
+import transformers
 import argparse
 import json
 import sys
@@ -313,7 +314,7 @@ def main() -> None:
     else:
         device = 'cpu'
 
-    # device = 'cpu'
+    device = 'cpu'
 
     args = parse_args()
 
@@ -327,7 +328,20 @@ def main() -> None:
     prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.n_shot)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.n_shot) for fallacy in fallacies]
 
-    pipe = pipeline('text2text-generation', model=args.model, device=device)
+    # pipe = pipeline('text2text-generation', model=args.model, device=device)
+
+
+    if args.model == 'mosaicml/mpt-7b-instruct':
+        # Adjust the model configuration specifically for mosaicml/mpt-7b-instruct
+        config = transformers.AutoConfig.from_pretrained(args.model, trust_remote_code=True)
+        model = transformers.AutoModelForCausalLM.from_pretrained(args.model, config=config, torch_dtype=torch.bfloat16,
+                                                                  trust_remote_code=True)
+        tokenizer = transformers.AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
+        pipe = transformers.pipeline('text-generation', model=model, tokenizer=tokenizer, device=device)
+    else:
+        # Default pipeline setup for other models
+        pipe = transformers.pipeline('text2text-generation', model=args.model, device=device)
+
     generated_texts = prompt_model(pipe, prompts, args.logpath)
 
     if args.logpath:
