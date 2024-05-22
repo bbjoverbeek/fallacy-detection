@@ -390,10 +390,10 @@ def save_results(correct, prompt_frame, generated_texts, fallacies, args):
               'do_sample': args.do_sample
               }
     
-    filename = uniquify(args.model.split("/")[-1] + '-' + str(len(fallacies)) + '-' + '-'.join(args.prompt_features) + '.txt')
-    
+    os.makedirs("results", exist_ok=True)
+    filename = uniquify(os.path.join("results",args.model.split("/")[-1] + '-' + str(len(fallacies)) + '-' + '-'.join(args.prompt_features) + '.txt'))
     with open(filename, 'w') as f:
-        f.write(json.dumps(results)) 
+        f.write(json.dumps(results))
 
 def main() -> None:
     """A script to prompt seq2seq LLMs for fallacy detection"""
