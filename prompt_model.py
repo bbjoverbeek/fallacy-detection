@@ -13,7 +13,8 @@ import re
 import os
 from collections import Counter
 import random
-random.seed(42)
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
 
 # TODO: find way to truncate the generated text if too long for the model
 PromptFeature = Literal['zero-shot', 'few-shot', 'chain-of-thought', 'self-consistency', 'positive-feedback', 'negative-feedback']
@@ -28,32 +29,66 @@ class Fallacy:
         text = self.fallacy_text.rstrip('\n')
         return f'Text: "{text}"\nLabel(s): "{self.labels}"'
 
-    def get_base_prompt(self, fallacy_options: list[str]) -> str:
+    def get_base_prompt(self, fallacy_options: list[str], model) -> str:
         """Return the basic prompt"""
+
+        context = f"""An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument. A fallacious argument is an argument where the premises do not entail the conclusion."""
+        question = f"""Which one of these {len(fallacy_options)} fallacious argument types does the following text contain?"""
+        unsure = f"""Respond "Unsure about answer" if not sure about the answer."""
+        informal = {"slippery slope": "This fallacy occurs when it is claimed that a small step will inevitably lead to a chain of events, resulting in a significant negative outcome.",
+                    "ad hominem": "This fallacy involves attacking a person's character or motives instead of addressing the substance of their argument.",
+                    "appeal to (false) authority": "This fallacy occurs when an argument relies on the opinion or endorsement of an authority figure who may not have relevant expertise or whose expertise is questionable. When applicable, a scientific consensus is not an appeal to authority.",
+                    "X appeal to majority": "This fallacy is based on claiming a truth or affirming something is good because many people think so.",
+                    "nothing": "No fallacious argument.",
+        }
 
         # prompt = f'What logical fallacy is used here?\nThe options are: {fallacy_options}.\n Text: "\n{self.fallacy_text}"'
 
+        if model == 'mosaicml/mpt-7b-instruct':
+            # prompt for mpt-7b (https://huggingface.co/datasets/mosaicml/dolly_hhrlhf?ref=blog.paperspace.com&row=0 / https://blog.paperspace.com/large-language-models-fine-tuning-mpt-7b-on-paperspace/)
+            fallacy_options_string = " ".join(str(i) + '. ' + j + ': ' + informal[j] for i, j in enumerate(fallacy_options, 1))
+            
+            [x for x in fallacy_options if x!= "nothing"]+["nothing (no fallacious argument)"]
+            prompt = f"""Below is an instruction that describes a task. Write a response that appropriately completes the request. ### Instruction: {context} The potential fallacious argument types are {fallacy_options_string} {question} Respond with one of the {len(fallacy_options)} options without providing an explanation. {unsure} Text: "{self.fallacy_text}" ### Response:"""
+            return prompt
+
+        # In the wild prompt (training data paper)
+        if False:
+            prompt = f"""You task is to detect a fallacy in the Text Snippet. The label can be “Slippery Slope”, “Appeal to Authority”, “Ad Hominem”, “Appeal to Majority” or “None”.
+Text Snippet: {self.fallacy_text}
+Label:
+"""
+
         # MFALDA prompt
-        sep = "\n- "
-        fallacy_options_string = sep+sep.join(fallacy_options)
-        prompt = f"""Definitions:
+        if False:
+            prompt = f"""Definitions:
 - An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument.
 - A fallacious argument is an argument where the premises do not entail the conclusion.
 Text: "{self.fallacy_text}"
 Based on the above text, determine whether the following sentence is part of a fallacious argument or not. If it is, indicate the type(s) of fallacy without providing explanations. The potential types of fallacy include:
-{fallacy_options_string}
+- {str(chr(10)+"- ").join(fallacy_options)}
 Sentence: "{self.fallacy_text}"
 Output:
 """
 
+        # adjusted MFALDA prompt
+        prompt = f"""Answer the question based on the context below. {unsure}
+Context: {context}
+The potential fallacious argument types are:
+- {str(chr(10)+"- ").join([x+': '+informal[x] for x in fallacy_options])}
+Question: {question}
+Text: "{self.fallacy_text}"
+Answer:
+"""
         return prompt
-
+    
     def get_few_shot_prompt(self, fallacy_options: list[str], n_shot: int) -> str:
         """Return a few-shot prompt"""
         raise NotImplementedError
 
     def get_chain_of_thought_prompt(self, prompt: str) -> str:
         """Alter the prompt to include chain of thought"""
+        # idea: include formal descriptions of the fallacies according to the mfalda paper? Force model to link parts to formal symbols?
 
         # prompt = f'{prompt}\nLet\'s think in steps'
         prompt = f'{prompt}\nPlease also explain your thinking steps.'
@@ -61,6 +96,7 @@ Output:
         return prompt
 
     # Note that the self-consistency prompt is the same as the chain of thought prompt
+    # idea: for self-consistency, use all 3 models?
     
     def get_positive_feedback_prompt(self, prompt: str, sentiment: Literal['positive', 'negative']) -> str:
         """Alter the prompt to include positive or negative feedback feedback"""
@@ -72,9 +108,9 @@ Output:
 
         return prompt
 
-    def build_prompt(self, fallacy_options: list[str], prompt_features: list[PromptFeature], n_shot: int = 0) -> str:
+    def build_prompt(self, fallacy_options: list[str], prompt_features: list[PromptFeature], model, n_shot: int = 0) -> str:
         """Build a prompt based on the prompt features provided"""
-        prompt = self.get_base_prompt(fallacy_options)
+        prompt = self.get_base_prompt(fallacy_options, model)
         if 'zero-shot' in prompt_features:
             pass
         elif 'few-shot' in prompt_features:
@@ -156,6 +192,27 @@ def parse_args() -> argparse.Namespace:
         help='Use cpu even when gpu is available'
     )
 
+    parser.add_argument(
+        '--temp',
+        type=float,
+        default=1.0,
+        help='Temperature for the model'
+    )
+
+    parser.add_argument(
+        '--do-sample',
+        type=bool,
+        default=False,
+        help='Sample from tokens (instead of selecting greedily)'
+    )
+
+    parser.add_argument(
+        '--top-k',
+        type=int,
+        default=50,
+        help='Top-k for the model'
+    )
+
     # parse args
     args = parser.parse_args()
 
@@ -174,8 +231,8 @@ def parse_args() -> argparse.Namespace:
     if 'positive-feedback' in args.prompt_features and 'negative-feedback' in args.prompt_features:
         parser.error('positive-feedback and negative-feedback prompt types cannot be used together')
         
-    if args.samples < 5:
-        parser.error('The number of samples can not be smaller than the number of types of fallacies')
+    # if args.samples < 5:
+    #     parser.error('The number of samples can not be smaller than the number of types of fallacies')
 
     return args
 
@@ -195,17 +252,17 @@ def load_dataset(dataset_path: str) -> list[Fallacy]:
     return fallacies
 
 
-def prompt_model(pipe: pipeline, prompts: list[str], logpath: str) -> list[str]:
+def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, do_sample) -> list[str]:
     """Get model output for all the prompts"""
 
     generated_texts = []
     for prompt in tqdm(prompts, desc='Prompting model', leave=False):
         generated_text = pipe(
             prompt,
-            do_sample=True,
-            temperature=0.7,
-            top_k=40,
-            max_new_tokens=200
+            do_sample=do_sample,
+            temperature=temp,
+            top_k=top_k,
+            max_new_tokens=25
         )
         generated_texts.append(generated_text[0]['generated_text'])
 
@@ -215,6 +272,7 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str) -> list[str]:
         # # print model answer to test the extract_model_answer function
         # print(f'Model answer: "{extract_model_answer(generated_text[0]["generated_text"], ["slippery slope","X appeal to majority", "ad hominem", "appeal to (false) authority", "nothing"])}"\n')
 
+        if "### Response:" in generated_texts[-1]: generated_texts[-1] = generated_texts[-1].split("### Response:")[-1]
     return generated_texts
 
 
@@ -289,7 +347,7 @@ def extract_model_answer(generated_text, fallacy_options):
 def get_balanced_fallacies(fallacies, fallacy_options, n):
     balanced_fallacies = []
     counts = dict.fromkeys(fallacy_options,0)
-    n_class = n//len(fallacy_options)
+    n_class = -(-n // len(fallacy_options))
     # c = Counter([fallacy.labels[0] for fallacy in fallacies])
     # for key, count in [(key, count) for key, count in c.items() if count < n_class]:
     # min_c = min(c, key=c.get)
@@ -301,7 +359,7 @@ def get_balanced_fallacies(fallacies, fallacy_options, n):
             balanced_fallacies.append(fallacies[i])
             counts[fallacies[i].labels[0]] += 1
             n -= 1
-        if n < 0: break
+        if n == 0: break
     random.shuffle(balanced_fallacies)
     return balanced_fallacies
 
@@ -324,7 +382,12 @@ def save_results(correct, prompt_frame, generated_texts, fallacies, args):
               'fallacy_labels': [f.labels for f in fallacies],
               'model': args.model,
               'prompt_features': args.prompt_features,
-              'n': len(fallacies)
+              'n': len(fallacies),
+              'temperature': args.temp,
+              'top-k': args.top_k,
+              'max_new_tokens': 25,
+              'random_seed': RANDOM_SEED,
+              'do_sample': args.do_sample
               }
     
     filename = uniquify(args.model.split("/")[-1] + '-' + str(len(fallacies)) + '-' + '-'.join(args.prompt_features) + '.txt')
@@ -341,17 +404,13 @@ def main() -> None:
     else:
         device = 'cpu'
 
-    print(device)
-
     fallacies = load_dataset(args.dataset)
     fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
 
-    # print(Counter([fallacy.labels[0] for fallacy in fallacies]))
     fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
-
     empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
-    prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.n_shot)
-    prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.n_shot) for fallacy in fallacies]
+    prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot)
+    prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot) for fallacy in fallacies]
 
     # pipe = pipeline('text2text-generation', model=args.model, device=device)
 
@@ -359,15 +418,16 @@ def main() -> None:
     if args.model == 'mosaicml/mpt-7b-instruct':
         # Adjust the model configuration specifically for mosaicml/mpt-7b-instruct
         config = transformers.AutoConfig.from_pretrained(args.model, trust_remote_code=True)
-        model = transformers.AutoModelForCausalLM.from_pretrained(args.model, config=config, torch_dtype=torch.bfloat16,
-                                                                  trust_remote_code=True)
+        # config.attn_config['attn_impl'] = 'triton'
+        config.init_device = device
+        model = transformers.AutoModelForCausalLM.from_pretrained(args.model, config=config, torch_dtype=torch.bfloat16, trust_remote_code=True)
         tokenizer = transformers.AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
         pipe = transformers.pipeline('text-generation', model=model, tokenizer=tokenizer, device=device)
     else:
         # Default pipeline setup for other models
-        pipe = transformers.pipeline('text2text-generation', model=args.model, device=device)
+        pipe = transformers.pipeline('text2text-generation', model=args.model, device=device, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
 
-    generated_texts = prompt_model(pipe, prompts, args.logpath)
+    generated_texts = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
 
     if args.logpath:
         with open(args.logpath, 'w', encoding='utf-8') as outp:
