@@ -217,8 +217,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '-r',
         '--repeat',
-        default=3,
-        help ='number of repetion for self-consistency'
+        default=0,
+        help ='number of repetition for self-consistency'
     )
     parser.add_argument(
         '-cl',
@@ -247,7 +247,10 @@ def parse_args() -> argparse.Namespace:
         parser.error('positive-feedback and negative-feedback prompt types cannot be used together')
     # if args.samples < 5:
     #     parser.error('The number of samples can not be smaller than the number of types of fallacies')
-
+    if args.repeat>0 and 'self-consistency' not in args.prompt_features:
+        parser.error('Prompt can not be repeated for the other features than the self-consistency')
+    if args.repeat==0 and 'self-consistency' in args.prompt_features: 
+        parser.error('Number of repetition can not be zero for self-consistency')
     return args
 
 
