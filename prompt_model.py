@@ -292,32 +292,47 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         
 def extract_model_answer(generated_text, fallacy_options):
     """Extract the answer from generated text based on specified patterns or by frequency of occurrence."""
-    # Normalize the generated text for more reliable matching
-    normalized_text = generated_text.lower()
+    # Check if "### Response:" is in the generated text
+    if "### Response:" in generated_text:
+        response_text = generated_text.split("### Response:")[-1].strip()
+    else:
+        response_text = generated_text.strip()
 
-    # Pattern to capture 'answer is' or 'answer is:'
-    pattern = re.compile(r"answer is:?\s*([\w\s]+)", re.IGNORECASE)
+    # Normalize the response text for more reliable matching
+    normalized_text = response_text.lower()
+
+    # Define the prefixes for fallacy options
+    informal_prefixes = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj']
+    informal_map = {prefix: fallacy.lower() for prefix, fallacy in zip(informal_prefixes, fallacy_options)}
+
+    # Pattern to capture prefixed answers
+    pattern = re.compile(r"\b(aa|bb|cc|dd|ee|ff|gg|hh|ii|jj)\b", re.IGNORECASE)
     match = pattern.search(normalized_text)
     if match:
-        answer = match.group(1).strip()
-        # Check if the extracted answer is a close match to any of the fallacy options
-        for option in fallacy_options:
-            if answer in option.lower():
-                return option  # Return the matching fallacy option as it is in the list
-        # If no close match, consider the raw extracted answer (This part could be refined)
-        return answer
+        answer_prefix = match.group(1).lower()
+        return informal_map[answer_prefix]
 
-    # If no explicit answer pattern is found, look for the most mentioned fallacy in the options
-    # Count occurrences of each fallacy option in the normalized text
-    fallacy_count = {option: normalized_text.count(option.lower()) for option in fallacy_options}
+    # If no prefixed answer is found, look for the most mentioned fallacy in the options
+    fallacy_count = {option.lower(): normalized_text.count(option.lower()) for option in fallacy_options}
 
     # Find the fallacy with the highest count in the text, if any are mentioned
     if fallacy_count:
         most_common_fallacy = max(fallacy_count, key=fallacy_count.get)
         if fallacy_count[most_common_fallacy] > 0:
-            return most_common_fallacy  # Return the most common fallacy that actually appears
+            return most_common_fallacy
+
+        # If no clear answer is found, check for the last word in the fallacy options
+    last_word_fallacy_count = {option.lower(): normalized_text.count(option.split()[-1].lower()) for option in
+                               fallacy_options}
+
+    # Find the fallacy with the highest count of the last word
+    if last_word_fallacy_count:
+        most_common_last_word_fallacy = max(last_word_fallacy_count, key=last_word_fallacy_count.get)
+        if last_word_fallacy_count[most_common_last_word_fallacy] > 0:
+            return most_common_last_word_fallacy
 
     return None  # Return None if no fallacies are mentioned or no pattern is matched
+
 
 def get_balanced_fallacies(fallacies, fallacy_options, n):
     balanced_fallacies = []
