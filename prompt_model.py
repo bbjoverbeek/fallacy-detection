@@ -103,15 +103,14 @@ Text: {self.fallacy_text}
         return prompt
 
     # Note that the self-consistency prompt is the same as the chain of thought prompt
-    # idea: for self-consistency, use all 3 models?
     
     def get_positive_feedback_prompt(self, prompt: str, sentiment: Literal['positive', 'negative']) -> str:
         """Alter the prompt to include positive or negative feedback feedback"""
 
         if sentiment == 'positive':
-            prompt = f'Good job on that last prompt! Let\'s try another one. {prompt}'
+            prompt = f'Your last response was great! Let\'s try another one. {prompt}'
         elif sentiment == 'negative':
-            prompt = f'That last attempt was horrendous! Try this one instead. {prompt}'
+            prompt = f'Your last response was awful! Try this one instead. {prompt}'
 
         return prompt
 
@@ -203,15 +202,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--temp',
         type=float,
-        default=1.0,
+        default=0.7,
         help='Temperature for the model'
     )
 
     parser.add_argument(
         '--do-sample',
-        type=bool,
-        default=False,
-        help='Sample from tokens (instead of selecting greedily)'
+        action=argparse.BooleanOptionalAction,
+        help='Sample from tokens with temperature and top-k (instead of selecting greedily)'
     )
 
     parser.add_argument(
@@ -252,8 +250,6 @@ def parse_args() -> argparse.Namespace:
         
     if 'positive-feedback' in args.prompt_features and 'negative-feedback' in args.prompt_features:
         parser.error('positive-feedback and negative-feedback prompt types cannot be used together')
-    # if args.samples < 5:
-    #     parser.error('The number of samples can not be smaller than the number of types of fallacies')
     if args.repeat and 'self-consistency' not in args.prompt_features:
         parser.error('Prompt can not be repeated for the other features than the self-consistency')
     if args.repeat==0 and 'self-consistency' in args.prompt_features: 
@@ -322,7 +318,7 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, 
             do_sample=do_sample,
             temperature=temp,
             top_k=top_k,
-            max_new_tokens=25
+            max_new_tokens=800
         )
         generated_text = generated_text[0]['generated_text']
         # if self-consistency is true, repeat prompting
@@ -351,6 +347,7 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
     """Checks if the model prediction is correct, and prints the number of correct predictions."""
     
     correct = []
+    model_answers = []
     
     if logpath:
         outp = open(logpath, 'w')
@@ -363,11 +360,10 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
 
         # extract the model answer
         model_answer = extract_model_answer(generated_text, fallacy_options)
+        model_answers.append(model_answer)
 
-        # default answer is 'nothing'
-        #if not model_answer: model_answer = 'nothing'      ------ MODIFIED THIS LINE HERE----
         # default answer is 'no fallacy'
-        if not model_answer: model_answer = 'no fallacy'
+        # if not model_answer: model_answer = 'no fallacy'
 
         # Check if the extracted answer is one of the labels
         if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
@@ -386,7 +382,7 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         with open(logpath, 'a', encoding='utf-8') as outp:
             outp.write(f'Got {sum(correct)} out of {len(fallacies)} correct\n')
 
-    return correct
+    return correct, model_answers
         
 def extract_model_answer(generated_text, fallacy_options):
     """Extract the answer from generated text based on specified patterns or by frequency of occurrence."""
@@ -464,24 +460,41 @@ def uniquify(path):
 
     return path
 
-def save_results(correct, prompt_frame, generated_texts, fallacies, args):
-    results = {'correct': correct,
-              'prompt_frame': prompt_frame,
-              'generated_texts': generated_texts,
-              'fallacy_texts': [f.fallacy_text for f in fallacies],
-              'fallacy_labels': [f.labels for f in fallacies],
+def save_results(correct, model_answers, prompt_frame, prompts, generated_texts, fallacies, args):
+
+    results = {'prompt_frame': prompt_frame,
               'model': args.model,
               'prompt_features': args.prompt_features,
-              'n': len(fallacies),
+              'n_samples': len(fallacies),
               'temperature': args.temp,
               'top-k': args.top_k,
-              'max_new_tokens': 25,
+              'max_new_tokens': 800,
               'random_seed': RANDOM_SEED,
-              'do_sample': args.do_sample
+              'do_sample': args.do_sample,
+              'level': args.classification_level,
+              'self-consistency repetitions': args.repeat,
+              'n_shot': args.n_shot
               }
     
+    # for few-shot and self-consistency, 'prompt', 'model_output', 'predicted_fallacy', and 'is_correct' should be lists
+    results = {str(i+1):
+                        {
+                        'fallacy_text': fallacies[i].fallacy_text,
+                        'true_labels': fallacies[i].labels,
+                        'prompt': prompts[i],
+                        'model_output': generated_texts[i],
+                        'predicted_fallacy': model_answers[i],
+                        'is_correct': correct[i]
+                        }
+                for i in range(len(fallacies))}
+
     os.makedirs("results", exist_ok=True)
-    filename = uniquify(os.path.join("results",args.model.split("/")[-1] + '-' + str(len(fallacies)) + '-' + '-'.join(args.prompt_features) + '.txt'))
+    run_name = f"{args.model.split('/')[-1]}-{args.classification_level}-{'-'.join(args.prompt_features)}"
+    if 'few-shot' in args.prompt_features: run_name += f"-n{args.n_shot}"
+    if 'self-consistency' in args.prompt_features: run_name += f"-n{args.repeat}"
+    run_name += ".json"
+
+    filename = uniquify(os.path.join("results", run_name))
     with open(filename, 'w') as f:
         f.write(json.dumps(results))
 
@@ -513,7 +526,9 @@ def main() -> None:
     #fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
     fallacy_options = set(pd.read_json('classification_level.jsonl', lines=True)['labels'][args.classification_level])
 
-    # fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
+    if args.samples < 9999: # so only if dev set and --samples is given
+        fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
+        
     empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
     prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot) for fallacy in fallacies]
@@ -548,8 +563,8 @@ def main() -> None:
             for fallacy, generated_text in zip(fallacies, generated_texts):
                 outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n\n')
 
-    correct = evaluate_generated_texts(fallacies, generated_texts, args.logpath, fallacy_options)
-    save_results(correct, prompt_frame, generated_texts, fallacies, args)
+    correct, model_answers = evaluate_generated_texts(fallacies, generated_texts, args.logpath, fallacy_options)
+    save_results(correct, model_answers, prompt_frame, prompts, generated_texts, fallacies, args)
     
     
 if __name__ == '__main__':

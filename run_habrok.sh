@@ -38,7 +38,6 @@ do
         --prompt_features zero-shot \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
@@ -46,7 +45,6 @@ do
         --n-shot 1 \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
@@ -54,7 +52,6 @@ do
         --n-shot 3 \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
@@ -62,66 +59,54 @@ do
         --n-shot 5 \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features chain-of-thought \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features self-consistency \
         --repeat 3 \
         --do-sample \
-        --temp 0.7 \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features self-consistency \
         --repeat 5 \
         --do-sample \
-        --temp 0.7 \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features zero-shot positive-feedback\
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features zero-shot negative-feedback\
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features self-consistency positive-feedback \
         --repeat 5 \
         --do-sample \
-        --temp 0.7 \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features self-consistency negative-feedback \
         --repeat 5 \
         --do-sample \
-        --temp 0.7 \
         --classification_level $level \
         --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
-        --logpath output/
 done
