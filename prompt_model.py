@@ -31,56 +31,32 @@ class Fallacy:
         return f'Text: "{text}"\nLabel(s): "{self.labels}"'
 
     def get_base_prompt(self, fallacy_options: list[str], model) -> str:
-        """Return the basic prompt"""
+        """Return the base prompt"""
 
-        context = f"""An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument. A fallacious argument is an argument where the premises do not entail the conclusion."""
-        question = f"""Which one of these {len(fallacy_options)} fallacious argument types does the following text contain?"""
-        unsure = f"""Respond "Unsure about answer" if not sure about the answer."""
-        informal = {"slippery slope": "This fallacy occurs when it is claimed that a small step will inevitably lead to a chain of events, resulting in a significant negative outcome.",
-                    "ad hominem": "This fallacy involves attacking a person's character or motives instead of addressing the substance of their argument.",
-                    "appeal to (false) authority": "This fallacy occurs when an argument relies on the opinion or endorsement of an authority figure who may not have relevant expertise or whose expertise is questionable. When applicable, a scientific consensus is not an appeal to authority.",
-                    "X appeal to majority": "This fallacy is based on claiming a truth or affirming something is good because many people think so.",
-                    "nothing": "No fallacious argument.",
-        }
+        context = """An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument. A fallacious argument is an argument where the premises do not entail the conclusion."""
 
-        # prompt = f'What logical fallacy is used here?\nThe options are: {fallacy_options}.\n Text: "\n{self.fallacy_text}"'
+        # Create dynamic informal mapping based on the given fallacy options
+        informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ']
+        informal = {fallacy: f"{prefix} {fallacy}" for fallacy, prefix in zip(fallacy_options, informal_prefixes)}
 
-        if model == 'mosaicml/mpt-7b-instruct':
-            # prompt for mpt-7b (https://huggingface.co/datasets/mosaicml/dolly_hhrlhf?ref=blog.paperspace.com&row=0 / https://blog.paperspace.com/large-language-models-fine-tuning-mpt-7b-on-paperspace/)
-            fallacy_options_string = " ".join(str(i) + '. ' + j + ': ' + informal[j] for i, j in enumerate(fallacy_options, 1))
-            
-            [x for x in fallacy_options if x!= "nothing"]+["nothing (no fallacious argument)"]
-            prompt = f"""Below is an instruction that describes a task. Write a response that appropriately completes the request. ### Instruction: {context} The potential fallacious argument types are {fallacy_options_string} {question} Respond with one of the {len(fallacy_options)} options without providing an explanation. {unsure} Text: "{self.fallacy_text}" ### Response:"""
-            return prompt
+        fallacy_options_strings = "\n".join([informal[fallacy] for fallacy in fallacy_options])
+        question = f"Which one of these {len(fallacy_options)} fallacious argument types does the following text contain?"
+        unsure = f"Please choose an answer from {', '.join(informal_prefixes[:len(fallacy_options)])}."
 
-        # In the wild prompt (training data paper)
-        if False:
-            prompt = f"""You task is to detect a fallacy in the Text Snippet. The label can be “Slippery Slope”, “Appeal to Authority”, “Ad Hominem”, “Appeal to Majority” or “None”.
-Text Snippet: {self.fallacy_text}
-Label:
-"""
-
-        # MFALDA prompt
-        if False:
-            prompt = f"""Definitions:
-- An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument.
-- A fallacious argument is an argument where the premises do not entail the conclusion.
-Text: "{self.fallacy_text}"
-Based on the above text, determine whether the following sentence is part of a fallacious argument or not. If it is, indicate the type(s) of fallacy without providing explanations. The potential types of fallacy include:
-- {str(chr(10)+"- ").join(fallacy_options)}
-Sentence: "{self.fallacy_text}"
-Output:
-"""
-
-        # adjusted MFALDA prompt
-        prompt = f"""Answer the question based on the context below. {unsure}
-Context: {context}
+        prompt = f"""### Instruction:
+Below is an instruction that describes a task. Write a response that appropriately completes the request.
+Definitions:
+    - An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument.
+    - A fallacious argument is an argument where the premises do not entail the conclusion.
 The potential fallacious argument types are:
-- {str(chr(10)+"- ").join([x+': '+informal[x] for x in fallacy_options])}
-Question: {question}
+{fallacy_options_strings}
+
+{question}
 Text: "{self.fallacy_text}"
-Answer:
-"""
+
+{unsure}
+### Response:"""
+
         return prompt
     
     def get_few_shot_prompt(self, fallacy_options: list[str], n_shot: int) -> str:
@@ -89,11 +65,10 @@ Answer:
 
     def get_chain_of_thought_prompt(self, prompt: str) -> str:
         """Alter the prompt to include chain of thought"""
-        # idea: include formal descriptions of the fallacies according to the mfalda paper? Force model to link parts to formal symbols?
-
-        # prompt = f'{prompt}\nLet\'s think in steps'
-        prompt = f'{prompt}\nPlease also explain your thinking steps.'
-
+        prompt = prompt.replace(
+            "### Response:",
+            "\nBefore identifying the fallacy, explain your reasoning thoroughly. Your explanation should clarify why the specific fallacy applies to the given statement. This step is crucial!\nIf you do not explain your reasoning, you will not receive credit for this question.\n### Response:"
+        )
         return prompt
 
     # Note that the self-consistency prompt is the same as the chain of thought prompt
@@ -334,32 +309,47 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         
 def extract_model_answer(generated_text, fallacy_options):
     """Extract the answer from generated text based on specified patterns or by frequency of occurrence."""
-    # Normalize the generated text for more reliable matching
-    normalized_text = generated_text.lower()
+    # Check if "### Response:" is in the generated text
+    if "### Response:" in generated_text:
+        response_text = generated_text.split("### Response:")[-1].strip()
+    else:
+        response_text = generated_text.strip()
 
-    # Pattern to capture 'answer is' or 'answer is:'
-    pattern = re.compile(r"answer is:?\s*([\w\s]+)", re.IGNORECASE)
+    # Normalize the response text for more reliable matching
+    normalized_text = response_text.lower()
+
+    # Define the prefixes for fallacy options
+    informal_prefixes = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj']
+    informal_map = {prefix: fallacy.lower() for prefix, fallacy in zip(informal_prefixes, fallacy_options)}
+
+    # Pattern to capture prefixed answers
+    pattern = re.compile(r"\b(aa|bb|cc|dd|ee|ff|gg|hh|ii|jj)\b", re.IGNORECASE)
     match = pattern.search(normalized_text)
     if match:
-        answer = match.group(1).strip()
-        # Check if the extracted answer is a close match to any of the fallacy options
-        for option in fallacy_options:
-            if answer in option.lower():
-                return option  # Return the matching fallacy option as it is in the list
-        # If no close match, consider the raw extracted answer (This part could be refined)
-        return answer
+        answer_prefix = match.group(1).lower()
+        return informal_map[answer_prefix]
 
-    # If no explicit answer pattern is found, look for the most mentioned fallacy in the options
-    # Count occurrences of each fallacy option in the normalized text
-    fallacy_count = {option: normalized_text.count(option.lower()) for option in fallacy_options}
+    # If no prefixed answer is found, look for the most mentioned fallacy in the options
+    fallacy_count = {option.lower(): normalized_text.count(option.lower()) for option in fallacy_options}
 
     # Find the fallacy with the highest count in the text, if any are mentioned
     if fallacy_count:
         most_common_fallacy = max(fallacy_count, key=fallacy_count.get)
         if fallacy_count[most_common_fallacy] > 0:
-            return most_common_fallacy  # Return the most common fallacy that actually appears
+            return most_common_fallacy
+
+        # If no clear answer is found, check for the last word in the fallacy options
+    last_word_fallacy_count = {option.lower(): normalized_text.count(option.split()[-1].lower()) for option in
+                               fallacy_options}
+
+    # Find the fallacy with the highest count of the last word
+    if last_word_fallacy_count:
+        most_common_last_word_fallacy = max(last_word_fallacy_count, key=last_word_fallacy_count.get)
+        if last_word_fallacy_count[most_common_last_word_fallacy] > 0:
+            return most_common_last_word_fallacy
 
     return None  # Return None if no fallacies are mentioned or no pattern is matched
+
 
 def get_balanced_fallacies(fallacies, fallacy_options, n):
     balanced_fallacies = []

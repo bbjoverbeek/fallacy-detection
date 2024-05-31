@@ -1,0 +1,13 @@
+The potential fallacious argument types are:
+AA slippery slope
+BB ad hominem
+CC appeal to (false) authority
+DD X appeal to majority
+EE No fallacy
+
+Which one of these 5 fallacious argument types does the following text contain?
+"Groucho Marx said, "Who do you believe? -- me, or your own eyes?''"
+
+Please choose an answer form AA,BB,CC,DD or EE.
+Before identifying the fallacy, explain your reasoning thoroughly. Your explanation should clarify why the specific fallacy applies to the given statement. This step is crucial!
+If you do not explain your reasoning, you will not receive credit for this question.
