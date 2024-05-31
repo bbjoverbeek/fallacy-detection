@@ -413,6 +413,14 @@ def main() -> None:
         model = transformers.AutoModelForCausalLM.from_pretrained(args.model, config=config, torch_dtype=torch.bfloat16, trust_remote_code=True)
         tokenizer = transformers.AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
         pipe = transformers.pipeline('text-generation', model=model, tokenizer=tokenizer, device=device)
+    elif args.model == "meta-llama/Meta-Llama-3-8B-Instruct":
+        config = transformers.AutoConfig.from_pretrained(args.model, trust_remote_code=True)
+        config.init_device = device
+        tokenizer = transformers.AutoTokenizer.from_pretrained(args.model)
+        model = transformers.AutoModelForCausalLM.from_pretrained(args.model, config=config, torch_dtype=torch.bfloat16,
+                                                                  trust_remote_code=True)
+        pipe = transformers.pipeline('text-generation', model=model, tokenizer=tokenizer, device=device)
+
     else:
         # Default pipeline setup for other models
         pipe = transformers.pipeline('text2text-generation', model=args.model, device=device, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
