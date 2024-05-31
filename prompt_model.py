@@ -324,8 +324,19 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, 
             top_k=top_k,
             max_new_tokens=25
         )
-        generated_texts.append(generated_text[0]['generated_text'])
-
+        generated_text = generated_text[0]['generated_text']
+        # if self-consistency is true, repeat prompting
+        if 'self-consistency' in args.prompt_features:
+            for i in range(args.repeat-1):
+                new_genereated_text = pipe(
+                    prompt,
+                    do_sample=do_sample,
+                    temperature=temp,
+                    top_k=top_k,
+                    max_new_tokens=25
+                )
+                generated_text += new_genereated_text
+        generated_texts.append(generated_text)
         # temp code
         # print generated text and the prompt
         # print(f'Prompt: "{prompt}"\nGenerated text: "{generated_text[0]["generated_text"]}"\n')
@@ -496,7 +507,7 @@ def main() -> None:
     dev_dataset = load_dataset(dataset_path='data/dev/fallacy_corpus.jsonl', CL=args.classification_level)
     if args.prompt_features=='few-shot':
         "we will need dev_dataset to extract samples for few-shot"
-        dir = 'data/dev/fallacy_corpus.jsonl'
+        
         dev_dataset = remove_duplicates(dev_data=dev_dataset, test_data=fallacies)
         dev_dataset = get_balanced_fallacies(dev_dataset)
     #fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
@@ -531,12 +542,6 @@ def main() -> None:
         pipe = transformers.pipeline('text2text-generation', model=args.model, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
 
     generated_texts = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
-    
-    # if self-consistency is true, repeat prompting
-    if 'self-consistency' in args.prompt_features:
-        for i in range(args.repeat-1):
-            new_genereated_text = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
-            generated_texts += new_genereated_text
 
     if args.logpath:
         with open(args.logpath, 'w', encoding='utf-8') as outp:
