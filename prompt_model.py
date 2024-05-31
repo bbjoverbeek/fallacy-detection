@@ -419,7 +419,7 @@ def main() -> None:
     #fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
     fallacy_options = set(pd.read_json('classification_level.jsonl', lines=True)['labels'][args.classification_level])
 
-    fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
+    # fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
     empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
     prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot) for fallacy in fallacies]
