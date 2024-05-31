@@ -13,6 +13,7 @@ import re
 import os
 from collections import Counter
 import random
+import pandas as pd
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
 
@@ -118,6 +119,7 @@ def parse_args() -> argparse.Namespace:
         help='Model to prompt'
     )
 
+
     parser.add_argument(
         '-d',
         '--dataset',
@@ -187,6 +189,19 @@ def parse_args() -> argparse.Namespace:
         default=50,
         help='Top-k for the model'
     )
+    parser.add_argument(
+        '-r',
+        '--repeat',
+        default=0,
+        help ='number of repetition for self-consistency'
+    )
+    parser.add_argument(
+        '-cl',
+        '--classification_level',
+        default= 0,
+        type=int,
+        help= 'the level of classification, 0: binary, 1: 4 classes, 2: more fine grained classes'
+    )
 
     # parse args
     args = parser.parse_args()
@@ -205,10 +220,12 @@ def parse_args() -> argparse.Namespace:
         
     if 'positive-feedback' in args.prompt_features and 'negative-feedback' in args.prompt_features:
         parser.error('positive-feedback and negative-feedback prompt types cannot be used together')
-        
     # if args.samples < 5:
     #     parser.error('The number of samples can not be smaller than the number of types of fallacies')
-
+    if args.repeat>0 and 'self-consistency' not in args.prompt_features:
+        parser.error('Prompt can not be repeated for the other features than the self-consistency')
+    if args.repeat==0 and 'self-consistency' in args.prompt_features: 
+        parser.error('Number of repetition can not be zero for self-consistency')
     return args
 
 
@@ -395,7 +412,8 @@ def main() -> None:
         device = 'cpu'
 
     fallacies = load_dataset(args.dataset)
-    fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
+    #fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
+    fallacy_options = set(pd.read_json('classification_level.jsonl', lines=True)['labels'][args.classification_level])
 
     fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
     empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
