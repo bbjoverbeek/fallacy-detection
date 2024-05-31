@@ -169,7 +169,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument(
         '-p',
-        '--prompt-features',
+        '--prompt_features',
         type=str,
         choices=get_args(PromptFeature),
         nargs='+',
@@ -223,6 +223,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '-r',
         '--repeat',
+        type=int,
         default=0,
         help ='number of repetition for self-consistency'
     )
@@ -253,7 +254,7 @@ def parse_args() -> argparse.Namespace:
         parser.error('positive-feedback and negative-feedback prompt types cannot be used together')
     # if args.samples < 5:
     #     parser.error('The number of samples can not be smaller than the number of types of fallacies')
-    if args.repeat>0 and 'self-consistency' not in args.prompt_features:
+    if args.repeat and 'self-consistency' not in args.prompt_features:
         parser.error('Prompt can not be repeated for the other features than the self-consistency')
     if args.repeat==0 and 'self-consistency' in args.prompt_features: 
         parser.error('Number of repetition can not be zero for self-consistency')
@@ -262,7 +263,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def mapped_labels(labels):
-    """Convert the labels into appropate label for classififcation level =1 """
+    """Convert the labels (of test/val) into appropiate label for classififcation level =1 """
 
     # Define the categories using a dictionary
     fallacy_categories = {
@@ -530,6 +531,12 @@ def main() -> None:
         pipe = transformers.pipeline('text2text-generation', model=args.model, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
 
     generated_texts = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
+    
+    # if self-consistency is true, repeat prompting
+    if 'self-consistency' in args.prompt_features:
+        for i in range(args.repeat-1):
+            new_genereated_text = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
+            generated_texts += new_genereated_text
 
     if args.logpath:
         with open(args.logpath, 'w', encoding='utf-8') as outp:
