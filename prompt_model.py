@@ -36,7 +36,9 @@ class Fallacy:
         context = """An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument. A fallacious argument is an argument where the premises do not entail the conclusion."""
 
         # Create dynamic informal mapping based on the given fallacy options
-        informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ']
+        informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ', 'KK', 'LL', 'MM', 'NN', 'OO',
+                             'PP', 'QQ', 'RR', 'SS', 'TT', 'UU', 'VV', 'WW', 'XX', 'YY', 'ZZ', 'AB', 'AC', 'AD']
+
         informal = {fallacy: f"{prefix} {fallacy}" for fallacy, prefix in zip(fallacy_options, informal_prefixes)}
 
         fallacy_options_strings = "\n".join([informal[fallacy] for fallacy in fallacy_options])
@@ -319,11 +321,13 @@ def extract_model_answer(generated_text, fallacy_options):
     normalized_text = response_text.lower()
 
     # Define the prefixes for fallacy options
-    informal_prefixes = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj']
+    informal_prefixes = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp',
+                         'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'ab', 'ac', 'ad']
+
     informal_map = {prefix: fallacy.lower() for prefix, fallacy in zip(informal_prefixes, fallacy_options)}
 
     # Pattern to capture prefixed answers
-    pattern = re.compile(r"\b(aa|bb|cc|dd|ee|ff|gg|hh|ii|jj)\b", re.IGNORECASE)
+    pattern = re.compile(r"\b(aa|bb|cc|dd|ee|ff|gg|hh|ii|jj|kk|ll|mm|nn|oo|pp|qq|rr|ss|tt|uu|vv|ww|xx|yy|zz|ab|ac|ad)\b", re.IGNORECASE)
     match = pattern.search(normalized_text)
     if match:
         answer_prefix = match.group(1).lower()
