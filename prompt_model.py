@@ -25,7 +25,6 @@ class Fallacy:
     """A dataclass to hold the fally text and their corresponding labels."""
     fallacy_text: str
     labels: list[str]
-
     def __str__(self) -> str:
         text = self.fallacy_text.rstrip('\n')
         return f'Text: "{text}"\nLabel(s): "{self.labels}"'
@@ -36,7 +35,9 @@ class Fallacy:
         context = """An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument. A fallacious argument is an argument where the premises do not entail the conclusion."""
 
         # Create dynamic informal mapping based on the given fallacy options
-        informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ']
+        informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ', 'KK', 'LL', 'MM', 'NN', 'OO',
+                             'PP', 'QQ', 'RR', 'SS', 'TT', 'UU', 'VV', 'WW', 'XX', 'YY', 'ZZ', 'AB', 'AC', 'AD']
+
         informal = {fallacy: f"{prefix} {fallacy}" for fallacy, prefix in zip(fallacy_options, informal_prefixes)}
 
         fallacy_options_strings = "\n".join([informal[fallacy] for fallacy in fallacy_options])
@@ -59,9 +60,39 @@ Text: "{self.fallacy_text}"
 
         return prompt
     
-    def get_few_shot_prompt(self, fallacy_options: list[str], n_shot: int) -> str:
+    def get_few_shot_prompt(self,  prompt, fallacy_options: list[str], n_shot: int) -> str:
         """Return a few-shot prompt"""
-        raise NotImplementedError
+        informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ', 'KK', 'LL', 'MM', 'NN', 'OO',
+                             'PP', 'QQ', 'RR', 'SS', 'TT', 'UU', 'VV', 'WW', 'XX', 'YY', 'ZZ', 'AB', 'AC', 'AD']
+
+        informal = {fallacy: f"{prefix} {fallacy}" for fallacy, prefix in zip(fallacy_options, informal_prefixes)}
+
+        fallacy_options_strings = "\n".join([informal[fallacy] for fallacy in fallacy_options])
+        question = f"Which one of these {len(fallacy_options)} fallacious argument types does the following text contain?"
+        unsure = f"Please choose an answer from {', '.join(informal_prefixes[:len(fallacy_options)])}."
+
+        prompt = f"""### Instruction:
+Below is an instruction that describes a task. Write a response that appropriately completes the request.
+Definitions:
+    - An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument.
+    - A fallacious argument is an argument where the premises do not entail the conclusion.
+The potential fallacious argument types are:
+{fallacy_options_strings}
+        """
+        prompt+= '\nNow consider the following samples as exaples: \n'
+        global dev_dataset
+        for i in range(n_shot):
+            random_idx = random.randint(0, len(dev_dataset)-1)
+            prompt += f"""{question}
+            Text: {dev_dataset[random_idx].fallacy_text}
+            ### Response: {dev_dataset[random_idx].labels}\n"""
+        prompt += f"""{question}
+Text: {self.fallacy_text}
+{unsure}
+        ### Response:"""
+        return prompt        
+        
+        
 
     def get_chain_of_thought_prompt(self, prompt: str) -> str:
         """Alter the prompt to include chain of thought"""
@@ -90,13 +121,13 @@ Text: "{self.fallacy_text}"
         if 'zero-shot' in prompt_features:
             pass
         elif 'few-shot' in prompt_features:
-            raise NotImplementedError     
+            prompt = self.get_few_shot_prompt(prompt, fallacy_options=fallacy_options, n_shot=n_shot)     
 
         if 'chain-of-thought' in prompt_features:
             prompt = self.get_chain_of_thought_prompt(prompt)
         elif 'self-consistency' in prompt_features:
             prompt = self.get_chain_of_thought_prompt(prompt)
-            raise NotImplementedError
+            
         
         if 'positive-feedback' in prompt_features:
             prompt = self.get_positive_feedback_prompt(prompt, 'positive')
@@ -229,17 +260,53 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def load_dataset(dataset_path: str) -> list[Fallacy]:
-    """Convert jsonl lines to a list of prompts"""
+
+def mapped_labels(labels):
+    """Convert the labels into appropate label for classififcation level =1 """
+
+    # Define the categories using a dictionary
+    fallacy_categories = {
+        "ad hominem": "fallacy of credibility", "ad populum": "fallacy of credibility", "appeal to nature": "fallacy of credibility",
+        "appeal to (false) authority": "fallacy of credibility", "guilt by association": "fallacy of credibility", 
+        "appeal to tradition": "fallacy of credibility", "tu quoque": "fallacy of credibility", "fallacy of relevance": "fallacy of credibility",
+
+        "hasty generalization": "fallacy of logic", "causal oversimplification": "fallacy of logic", "false dilemma": "fallacy of logic",
+        "straw man": "fallacy of logic", "false causality": "fallacy of logic", "false analogy": "fallacy of logic", 
+        "slippery slope": "fallacy of logic", "circular reasoning": "fallacy of logic", "equivocation": "fallacy of logic", 
+        "fallacy of division": "fallacy of logic",
+
+        "appeal to ridicule": "appeal to emotion", "appeal to fear": "appeal to emotion", "appeal to worse problems": "appeal to emotion",
+        "appeal to anger": "appeal to emotion", "appeal to positive emotion": "appeal to emotion", "appeal to pity": "appeal to emotion"
+    }
+
+    # Replace labels using list comprehension and dictionary lookup
+    labels = [fallacy_categories.get(label, "no fallacy") for label in labels]
+    return labels
+
+def load_dataset(dataset_path: str, CL: int) -> list[Fallacy]:
+    """Convert jsonl lines to a list of prompts 
+    and also maps the labels of the texts based on the classification level"""
 
     fallacies = []
 
     with open(dataset_path, 'r') as inp:
         dataset = inp.readlines()
-
+    
     for line in dataset:
         example = json.loads(line)
-        fallacies.append(Fallacy(example['text'], [label[2] for label in example['labels']]))
+        fallacy = Fallacy(example['text'], [label[2] for label in example['labels']])
+        if len(fallacy.labels)==0 or fallacy.labels==['nothing']:
+            fallacy.labels=['no fallacy']
+        fallacy.labels = [label.lower() for label in fallacy.labels] #converting the labels into lowercase
+        
+        if CL==0: #for binary classification
+            fallacy.labels = list(set(['no fallacy' if element=='no fallacy' else "fallacy" for element in fallacy.labels]))
+            
+        elif CL==1: #for classification level 1 (no fallacy, FOC, FOL, FOE) 
+            fallacy.labels = mapped_labels(fallacy.labels)
+        else:
+            pass
+        fallacies.append(fallacy)
     
     return fallacies
 
@@ -286,7 +353,9 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         model_answer = extract_model_answer(generated_text, fallacy_options)
 
         # default answer is 'nothing'
-        if not model_answer: model_answer = 'nothing'
+        #if not model_answer: model_answer = 'nothing'      ------ MODIFIED THIS LINE HERE----
+        # default answer is 'no fallacy'
+        if not model_answer: model_answer = 'no fallacy'
 
         # Check if the extracted answer is one of the labels
         if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
@@ -319,11 +388,13 @@ def extract_model_answer(generated_text, fallacy_options):
     normalized_text = response_text.lower()
 
     # Define the prefixes for fallacy options
-    informal_prefixes = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj']
+    informal_prefixes = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp',
+                         'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'ab', 'ac', 'ad']
+
     informal_map = {prefix: fallacy.lower() for prefix, fallacy in zip(informal_prefixes, fallacy_options)}
 
     # Pattern to capture prefixed answers
-    pattern = re.compile(r"\b(aa|bb|cc|dd|ee|ff|gg|hh|ii|jj)\b", re.IGNORECASE)
+    pattern = re.compile(r"\b(aa|bb|cc|dd|ee|ff|gg|hh|ii|jj|kk|ll|mm|nn|oo|pp|qq|rr|ss|tt|uu|vv|ww|xx|yy|zz|ab|ac|ad)\b", re.IGNORECASE)
     match = pattern.search(normalized_text)
     if match:
         answer_prefix = match.group(1).lower()
@@ -402,6 +473,14 @@ def save_results(correct, prompt_frame, generated_texts, fallacies, args):
     with open(filename, 'w') as f:
         f.write(json.dumps(results))
 
+
+def remove_duplicates(dev_data, test_data):
+    """Remove the samples from the dev_dataset that also exist in test_dataset"""
+    test_texts = set(fallacy.fallacy_text for fallacy in test_data)
+    dev_data = [fallacy for fallacy in dev_data if fallacy.fallacy_test not in test_texts]
+    return dev_data
+
+
 def main() -> None:
     """A script to prompt seq2seq LLMs for fallacy detection"""
     args = parse_args()
@@ -411,11 +490,18 @@ def main() -> None:
     else:
         device = 'cpu'
 
-    fallacies = load_dataset(args.dataset)
+    fallacies = load_dataset(args.dataset, args.classification_level)
+    global dev_dataset
+    dev_dataset = load_dataset(dataset_path='data/dev/fallacy_corpus.jsonl', CL=args.classification_level)
+    if args.prompt_features=='few-shot':
+        "we will need dev_dataset to extract samples for few-shot"
+        dir = 'data/dev/fallacy_corpus.jsonl'
+        dev_dataset = remove_duplicates(dev_data=dev_dataset, test_data=fallacies)
+        dev_dataset = get_balanced_fallacies(dev_dataset)
     #fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
     fallacy_options = set(pd.read_json('classification_level.jsonl', lines=True)['labels'][args.classification_level])
 
-    fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
+    # fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
     empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
     prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot) for fallacy in fallacies]
@@ -441,7 +527,7 @@ def main() -> None:
 
     else:
         # Default pipeline setup for other models
-        pipe = transformers.pipeline('text2text-generation', model=args.model, device=device, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
+        pipe = transformers.pipeline('text2text-generation', model=args.model, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
 
     generated_texts = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
 
