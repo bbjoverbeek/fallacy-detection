@@ -325,15 +325,15 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, 
         # if self-consistency is true, repeat prompting
         generated_texts = []
         for _ in range(repeat):
-            genereated_text = pipe(
+            generated_text = pipe(
                 prompt,
                 do_sample=do_sample,
                 temperature=temp,
                 top_k=top_k,
                 max_new_tokens=800 if repeat==1 else 125
             )[0]['generated_text']
-            if "### Response:" in generated_texts[-1]: generated_texts[-1] = generated_texts[-1].split("### Response:")[-1]
-            generated_texts.append(genereated_text)
+            if "### Response:" in generated_text: generated_text = generated_text.split("### Response:")[-1]
+            generated_texts.append(generated_text)
         all_generated_texts.append(generated_texts)
         # temp code
         # print generated text and the prompt
