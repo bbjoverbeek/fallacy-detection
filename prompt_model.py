@@ -78,18 +78,19 @@ Definitions:
     - A fallacious argument is an argument where the premises do not entail the conclusion.
 The potential fallacious argument types are:
 {fallacy_options_strings}
-        """
+"""
         prompt+= '\nNow consider the following samples as exaples: \n'
         global dev_dataset
-        for i in range(n_shot):
+        for _ in range(n_shot):
             random_idx = random.randint(0, len(dev_dataset)-1)
+            example = dev_dataset[random_idx]
             prompt += f"""{question}
-            Text: {dev_dataset[random_idx].fallacy_text}
-            ### Response: {dev_dataset[random_idx].labels}\n"""
+            Text: {example.fallacy_text}
+            ### Response: {example.labels}\n"""
         prompt += f"""{question}
 Text: {self.fallacy_text}
 {unsure}
-        ### Response:"""
+### Response:"""
         return prompt        
         
         
@@ -222,7 +223,7 @@ def parse_args() -> argparse.Namespace:
         '-r',
         '--repeat',
         type=int,
-        default=0,
+        default=1,
         help ='number of repetition for self-consistency'
     )
     parser.add_argument(
@@ -250,10 +251,10 @@ def parse_args() -> argparse.Namespace:
         
     if 'positive-feedback' in args.prompt_features and 'negative-feedback' in args.prompt_features:
         parser.error('positive-feedback and negative-feedback prompt types cannot be used together')
-    if args.repeat and 'self-consistency' not in args.prompt_features:
+    if args.repeat > 1 and 'self-consistency' not in args.prompt_features:
         parser.error('Prompt can not be repeated for the other features than the self-consistency')
-    if args.repeat==0 and 'self-consistency' in args.prompt_features: 
-        parser.error('Number of repetition can not be zero for self-consistency')
+    if args.repeat==1 and 'self-consistency' in args.prompt_features: 
+        parser.error('Number of repetition needs to be more than 1 for self-consistency')
     return args
 
 
@@ -277,8 +278,8 @@ def mapped_labels(labels):
     }
 
     # Replace labels using list comprehension and dictionary lookup
-    labels = [fallacy_categories.get(label, "no fallacy") for label in labels]
-    return labels
+    return [fallacy_categories.get(label, "no fallacy") for label in labels]
+    
 
 def load_dataset(dataset_path: str, CL: int) -> list[Fallacy]:
     """Convert jsonl lines to a list of prompts 
@@ -308,33 +309,44 @@ def load_dataset(dataset_path: str, CL: int) -> list[Fallacy]:
     return fallacies
 
 
-def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, do_sample) -> list[str]:
+def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, do_sample, repeat) -> list[str]:
     """Get model output for all the prompts"""
 
-    generated_texts = []
+    all_generated_texts = []
     for prompt in tqdm(prompts, desc='Prompting model', leave=False):
-        generated_text = pipe(
-            prompt,
-            do_sample=do_sample,
-            temperature=temp,
-            top_k=top_k,
-            max_new_tokens=800
-        )
-        generated_texts.append(generated_text[0]['generated_text'])
-
+        # generated_text = pipe(
+        #     prompt,
+        #     do_sample=do_sample,
+        #     temperature=temp,
+        #     top_k=top_k,
+        #     max_new_tokens=800
+        # )
+        # generated_text = generated_text[0]['generated_text']
+        # if self-consistency is true, repeat prompting
+        generated_texts = []
+        for _ in range(repeat):
+            generated_text = pipe(
+                prompt,
+                do_sample=do_sample,
+                temperature=temp,
+                top_k=top_k,
+                max_new_tokens=800 if repeat==1 else 125
+            )[0]['generated_text']
+            if "### Response:" in generated_text: generated_text = generated_text.split("### Response:")[-1]
+            generated_texts.append(generated_text)
+        all_generated_texts.append(generated_texts)
         # temp code
         # print generated text and the prompt
         # print(f'Prompt: "{prompt}"\nGenerated text: "{generated_text[0]["generated_text"]}"\n')
         # # print model answer to test the extract_model_answer function
         # print(f'Model answer: "{extract_model_answer(generated_text[0]["generated_text"], ["slippery slope","X appeal to majority", "ad hominem", "appeal to (false) authority", "nothing"])}"\n')
 
-        if "### Response:" in generated_texts[-1]: generated_texts[-1] = generated_texts[-1].split("### Response:")[-1]
-    return generated_texts
+        #if "### Response:" in generated_texts[-1]: generated_texts[-1] = generated_texts[-1].split("### Response:")[-1]
+    return all_generated_texts
 
 
 def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str], logpath: str, fallacy_options) -> None:
     """Checks if the model prediction is correct, and prints the number of correct predictions."""
-    
     correct = []
     model_answers = []
     
@@ -343,35 +355,75 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
     else:
         outp = sys.stdout
 
-    for fallacy, generated_text in zip(fallacies, generated_texts):
-        # write to logfile
-        # outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
+    for fallacy, texts in zip(fallacies, generated_texts):
+        fallacy_correct = []
+        fallacy_model_answers = []
 
-        # extract the model answer
-        model_answer = extract_model_answer(generated_text, fallacy_options)
-        model_answers.append(model_answer)
+        for generated_text in texts:
+            # outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
 
-        # default answer is 'no fallacy'
-        # if not model_answer: model_answer = 'no fallacy'
+            model_answer = extract_model_answer(generated_text, fallacy_options)
+            fallacy_model_answers.append(model_answer)
 
-        # Check if the extracted answer is one of the labels
-        if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
-            correct.append(1)
-            # outp.write('-> correct\n\n')
-        else:
-            correct.append(0)
-            # outp.write('-> incorrect\n\n')
+            if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
+                fallacy_correct.append(1)
+                # outp.write('-> correct\n\n')
+            else:
+                fallacy_correct.append(0)
+                # outp.write('-> incorrect\n\n')
+
+        correct.append(fallacy_correct)
+        model_answers.append(fallacy_model_answers)
     
     if logpath:
         outp.close()
 
-    print(f'Got {sum(correct)} out of {len(fallacies)} correct')
+    print(f'Got {sum(sum(correct_list) for correct_list in correct)} out of {sum(len(correct_list) for correct_list in correct)} correct')
 
     if logpath:
         with open(logpath, 'a', encoding='utf-8') as outp:
-            outp.write(f'Got {sum(correct)} out of {len(fallacies)} correct\n')
+            outp.write(f'Got {sum(sum(correct_list) for correct_list in correct)} out of {sum(len(correct_list) for correct_list in correct)} correct\n')
 
     return correct, model_answers
+
+
+    # correct = []
+    # model_answers = []
+    
+    # if logpath:
+    #     outp = open(logpath, 'w')
+    # else:
+    #     outp = sys.stdout
+
+    # for fallacy, generated_text in zip(fallacies, generated_texts):
+    #     # write to logfile
+    #     outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
+
+    #     # extract the model answer
+    #     model_answer = extract_model_answer(generated_text, fallacy_options)
+    #     model_answers.append(model_answer)
+
+    #     # default answer is 'no fallacy'
+    #     # if not model_answer: model_answer = 'no fallacy'
+
+    #     # Check if the extracted answer is one of the labels
+    #     if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
+    #         correct.append(1)
+    #         outp.write('-> correct\n\n')
+    #     else:
+    #         correct.append(0)
+    #         outp.write('-> incorrect\n\n')
+    
+    # if logpath:
+    #     outp.close()
+
+    # print(f'Got {sum(correct)} out of {len(fallacies)} correct')
+
+    # if logpath:
+    #     with open(logpath, 'a', encoding='utf-8') as outp:
+    #         outp.write(f'Got {sum(correct)} out of {len(fallacies)} correct\n')
+
+    # return correct, model_answers
         
 def extract_model_answer(generated_text, fallacy_options):
     """Extract the answer from generated text based on specified patterns or by frequency of occurrence."""
@@ -469,17 +521,17 @@ def save_results(correct, model_answers, prompt_frame, prompts, generated_texts,
               }
     
     # for few-shot and self-consistency, 'prompt', 'model_output', 'predicted_fallacy', and 'is_correct' should be lists
-    results = {str(i+1):
+    results_details = {str(i+1):
                         {
                         'fallacy_text': fallacies[i].fallacy_text,
                         'true_labels': fallacies[i].labels,
                         'prompt': prompts[i],
-                        'model_output': generated_texts[i],
-                        'predicted_fallacy': model_answers[i],
+                        'model_outputs': generated_texts[i],
+                        'predicted_fallacies': model_answers[i],
                         'is_correct': correct[i]
                         }
                 for i in range(len(fallacies))}
-
+    results.update(results_details)
     os.makedirs("results", exist_ok=True)
     run_name = f"{args.model.split('/')[-1]}-{args.classification_level}-{'-'.join(args.prompt_features)}"
     if 'few-shot' in args.prompt_features: run_name += f"-n{args.n_shot}"
@@ -494,8 +546,8 @@ def save_results(correct, model_answers, prompt_frame, prompts, generated_texts,
 def remove_duplicates(dev_data, test_data):
     """Remove the samples from the dev_dataset that also exist in test_dataset"""
     test_texts = set(fallacy.fallacy_text for fallacy in test_data)
-    dev_data = [fallacy for fallacy in dev_data if fallacy.fallacy_test not in test_texts]
-    return dev_data
+    return [fallacy for fallacy in dev_data if fallacy.fallacy_text not in test_texts]
+    
 
 
 def main() -> None:
@@ -512,7 +564,7 @@ def main() -> None:
     dev_dataset = load_dataset(dataset_path='data/dev/fallacy_corpus.jsonl', CL=args.classification_level)
     if args.prompt_features=='few-shot':
         "we will need dev_dataset to extract samples for few-shot"
-        dir = 'data/dev/fallacy_corpus.jsonl'
+        
         dev_dataset = remove_duplicates(dev_data=dev_dataset, test_data=fallacies)
         dev_dataset = get_balanced_fallacies(dev_dataset)
     #fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
@@ -524,7 +576,6 @@ def main() -> None:
     empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
     prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot) for fallacy in fallacies]
-
     # pipe = pipeline('text2text-generation', model=args.model, device=device)
 
 
@@ -548,13 +599,7 @@ def main() -> None:
         # Default pipeline setup for other models
         pipe = transformers.pipeline('text2text-generation', model=args.model, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
 
-    generated_texts = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
-    
-    # if self-consistency is true, repeat prompting
-    if 'self-consistency' in args.prompt_features:
-        for i in range(args.repeat-1):
-            new_genereated_text = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample)
-            generated_texts += new_genereated_text
+    generated_texts = prompt_model(pipe, prompts, args.logpath, args.temp, args.top_k, args.do_sample, args.repeat)
 
     if args.logpath:
         with open(args.logpath, 'w', encoding='utf-8') as outp:
