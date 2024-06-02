@@ -37,34 +37,34 @@ do
         --model $MODEL \
         --prompt_features zero-shot \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features few-shot \
         --n-shot 1 \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features few-shot \
         --n-shot 3 \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features few-shot \
         --n-shot 5 \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features chain-of-thought \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
@@ -72,7 +72,7 @@ do
         --repeat 3 \
         --do-sample \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
@@ -80,19 +80,19 @@ do
         --repeat 5 \
         --do-sample \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features zero-shot positive-feedback\
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl
 
     python3 prompt_model.py \
         --model $MODEL \
         --prompt_features zero-shot negative-feedback\
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl 
 
     python3 prompt_model.py \
         --model $MODEL \
@@ -100,7 +100,7 @@ do
         --repeat 5 \
         --do-sample \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl 
 
     python3 prompt_model.py \
         --model $MODEL \
@@ -108,5 +108,5 @@ do
         --repeat 5 \
         --do-sample \
         --classification_level $level \
-        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl \
+        --dataset ./data/test/mafalda_gold_standard_dataset.jsonl 
 done
