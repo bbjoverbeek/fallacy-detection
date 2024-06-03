@@ -95,8 +95,14 @@ def process_file(file_path):
     'precision': precision,
     'recall': recall,
     'f1_score': f1,
-    'accuracy': accuracy
+    'accuracy': accuracy,
+    'model' : data['model'],
+    'prompt_feature': data['prompt_features'][0],
+    'n_shot': data['n_shot'],
+    'repeat': data['self-consistency repetitions'],
+    'level': classification_level
     }
+	
 
 
     
@@ -110,17 +116,35 @@ def main():
     
 
     file_list = glob.glob(os.path.join(args.folder_path, '*.json'))
-
+    all_models = []
+    all_prompt_features = []
+    all_n_shot =[]
+    all_repeat = []
+    all_acc = []
+    all_pre = []
+    all_rec = []
+    all_f1 =[]
+    all_levels=[]
     for file_path in file_list:
         print(f"------{file_path}----------")
         result = process_file(file_path)
-        if result is not None:
-            print(f"File: {result['file']}")
-            print(f"Precision: {result['precision']:.4f}")
-            print(f"Recall: {result['recall']:.4f}")
-            print(f"F1 Score: {result['f1_score']:.4f}")
-            print(f"Accuracy: {result['accuracy']:.4f}")
-            print("---------------------------------")
+        print(f"File: {result['file']}")
+        print(f"Precision: {result['precision']:.4f}")
+        print(f"Recall: {result['recall']:.4f}")
+        print(f"F1 Score: {result['f1_score']:.4f}")
+        print(f"Accuracy: {result['accuracy']:.4f}")
+        print("---------------------------------")
+        all_models.append(result['model'])
+        all_prompt_features.append(result['prompt_feature'])
+        all_n_shot.append(result['n_shot'])
+        all_repeat.append(result['repeat'])
+        all_acc.append(result['accuracy'])
+        all_pre.append(result['precision'])
+        all_rec.append(result['recall'])
+        all_f1.append(result['f1_score'])
+        all_levels.append(result['level'])
+    df = pd.DataFrame({"model": all_models, 'level':all_levels, "prompt_feature": all_prompt_features, "accuracy": all_acc, "f1_score":all_f1, "precision": all_pre, "recall": all_rec, "n_shot":all_n_shot, "repeat": all_repeat})
+    df.to_csv("output_micro_scores.csv")
 
 if __name__ == '__main__':
     main()
