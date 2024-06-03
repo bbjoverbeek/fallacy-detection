@@ -16,6 +16,8 @@ import random
 import pandas as pd
 RANDOM_SEED = 42
 random.seed(RANDOM_SEED)
+from huggingface_hub import login
+
 
 # TODO: find way to truncate the generated text if too long for the model
 PromptFeature = Literal['zero-shot', 'few-shot', 'chain-of-thought', 'self-consistency', 'positive-feedback', 'negative-feedback']
@@ -585,6 +587,7 @@ def main() -> None:
         tokenizer = transformers.AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
         pipe = transformers.pipeline('text-generation', model=model, tokenizer=tokenizer, device=device)
     elif args.model == "meta-llama/Meta-Llama-3-8B-Instruct":
+        login(token="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")
         config = transformers.AutoConfig.from_pretrained(args.model, trust_remote_code=True)
         config.init_device = device
         tokenizer = transformers.AutoTokenizer.from_pretrained(args.model)
