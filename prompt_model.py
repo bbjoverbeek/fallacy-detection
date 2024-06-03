@@ -362,17 +362,17 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
         fallacy_model_answers = []
 
         for generated_text in texts:
-            outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
+            # outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
 
             model_answer = extract_model_answer(generated_text, fallacy_options)
             fallacy_model_answers.append(model_answer)
 
             if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
                 fallacy_correct.append(1)
-                outp.write('-> correct\n\n')
+                # outp.write('-> correct\n\n')
             else:
                 fallacy_correct.append(0)
-                outp.write('-> incorrect\n\n')
+                # outp.write('-> incorrect\n\n')
 
         correct.append(fallacy_correct)
         model_answers.append(fallacy_model_answers)
@@ -449,7 +449,10 @@ def extract_model_answer(generated_text, fallacy_options):
     match = pattern.search(normalized_text)
     if match:
         answer_prefix = match.group(1).lower()
-        return informal_map[answer_prefix]
+        try: 
+            return informal_map[answer_prefix]
+        except KeyError:
+            pass
 
     # If no prefixed answer is found, look for the most mentioned fallacy in the options
     fallacy_count = {option.lower(): normalized_text.count(option.lower()) for option in fallacy_options}
