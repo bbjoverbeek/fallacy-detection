@@ -90,6 +90,10 @@ def process_file(file_path):
             unique_true_labels.append(list(set(labels)))
         true_labels = unique_true_labels
     precision, recall, f1, accuracy = compute_metrics(true_labels, predicted_labels, classification_level, all_labels)
+    if (len(data['prompt_features'])>1):
+        prompt_features = data['prompt_features'][0] +"-"+ data['prompt_features'][1]
+    else: 
+        prompt_features = data['prompt_features'][0]
     return {
     'file': file_path,
     'precision': precision,
@@ -97,7 +101,7 @@ def process_file(file_path):
     'f1_score': f1,
     'accuracy': accuracy,
     'model' : data['model'],
-    'prompt_feature': data['prompt_features'][0],
+    'prompt_feature': prompt_features,
     'n_shot': data['n_shot'],
     'repeat': data['self-consistency repetitions'],
     'level': classification_level
