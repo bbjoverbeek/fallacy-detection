@@ -58,9 +58,15 @@ def compute_metrics(true_labels, predicted_labels, level, all_labels):
         mlb = MultiLabelBinarizer()
         y_true = mlb.fit_transform(y_true)
         y_pred = mlb.transform(y_pred)
-    precision = precision_score(y_true, y_pred, average="micro")
-    recall = recall_score(y_true, y_pred,  average="micro")
-    f1 = f1_score(y_true, y_pred, average="micro")
+        precision = precision_score(y_true, y_pred, average="micro")
+        recall = recall_score(y_true, y_pred,  average="micro")
+        f1 = f1_score(y_true, y_pred, average="micro")
+    else:
+        y_true = [x[0] for x in y_true]
+        precision = precision_score(y_true, y_pred, pos_label="fallacy")
+        recall = recall_score(y_true, y_pred, pos_label="fallacy")
+        f1 = f1_score(y_true, y_pred, pos_label="fallacy")
+
     accuracy = accuracy_score(y_true, y_pred)    
     
     return precision, recall, f1, accuracy
