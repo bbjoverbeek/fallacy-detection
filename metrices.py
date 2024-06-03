@@ -54,9 +54,10 @@ def compute_metrics(true_labels, predicted_labels, level, all_labels):
     y_pred = predicted_labels
     if level ==1 or level==2:
         # y_true = check_labels_consistency(true_labels, level, all_labels)
-        # y_pred = check_labels_consistency(predicted_labels, level, all_labels) 
-        y_true = MultiLabelBinarizer.fit_transform(y_true)
-        y_pred = MultiLabelBinarizer.transform(y_pred)
+        # y_pred = check_labels_consistency(predicted_labels, level, all_labels)
+        mlb = MultiLabelBinarizer()
+        y_true = mlb.fit_transform(y_true)
+        y_pred = mlb.transform(y_pred)
     precision = precision_score(y_true, y_pred, average="micro")
     recall = recall_score(y_true, y_pred,  average="micro")
     f1 = f1_score(y_true, y_pred, average="micro")
