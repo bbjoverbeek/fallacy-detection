@@ -1,11 +1,28 @@
 import json
 import os
+import re
 
 fallacy_codes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ', 'KK', 'LL', 'MM', 'NN', 'OO', 'PP', 'QQ', 'RR', 'SS', 'TT', 'UU', 'VV', 'WW', 'XX', 'YY', 'ZZ', 'AB', 'AC', 'AD']
+
+
 def find_double_answers(model_outputs):
-    # Find distinct fallacy codes in model_outputs
-    # Check if there are more than one distinct fallacy codes
-    return len(distinct_fallacies) > 1
+    # Initialize a set to store unique valid codes found
+    unique_codes_found = set()
+
+    # Ensure the output is a string and convert it to upper case for uniformity
+    output = model_outputs[0].upper() if isinstance(model_outputs, list) else model_outputs.upper()
+
+    # Extract potential codes using regular expression to split by non-alphanumeric characters
+    potential_codes = re.split(r'\W+', output)
+
+    # Store each valid code into a set
+    for code in potential_codes:
+        if code in fallacy_codes:
+            unique_codes_found.add(code)
+
+    # Check if at least two different codes are found
+    return len(unique_codes_found) >= 2
+
 
 def load_all_json_files(folder_path):
     json_files_data = {}
@@ -29,16 +46,14 @@ def check_double_answers(json_files_data):
             if len(output) == 1:
                 answers = find_double_answers(output)
             elif len(output) > 1:
-                for i in range(len(output)):
-                    answers = find_double_answers(output[i])
+                # skip self consistency for now
+                pass
             if answers:
                 print(f"Double answers found in {key}")
 def main():
     folder_path = 'results'
     json_files_data = load_all_json_files(folder_path)
     check_double_answers(json_files_data)
-    for file_name, data in json_files_data.items():
-        print(f'File: {file_name}')
 
 
 if __name__ == '__main__':
