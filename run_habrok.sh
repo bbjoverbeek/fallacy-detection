@@ -8,7 +8,7 @@
 #SBATCH --time=40:00:00
 #SBATCH --partition=gpulong
 #SBATCH --gres=gpu:a100:1
-#SBATCH --mem=36GB
+#SBATCH --mem=24GB
 
 export HF_HUB_CACHE='/scratch/s4415213/'
 
@@ -26,9 +26,6 @@ pip3 install -r requirements.txt
 MODEL='meta-llama/Meta-Llama-3-8B-Instruct'
 # MODEL='google/flan-t5-xl'
 # MODEL='mosaicml/mpt-7b-instruct'
-
-# possible prompt features
-# PromptFeature = Literal['zero-shot', 'few-shot', 'chain-of-thought', 'self-consistency', 'positive-feedback', 'negative-feedback']
 
 levels=( 0 1 2 )
 for level in "${levels[@]}"
