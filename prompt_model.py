@@ -7,44 +7,38 @@ from datasets import load_dataset, Dataset
 from dataclasses import dataclass
 from typing import Literal, get_args
 from tqdm import tqdm
-from enum import Enum
 import torch
 import re
 import os
-from collections import Counter
 import random
 import pandas as pd
-RANDOM_SEED = 42
-random.seed(RANDOM_SEED)
 from huggingface_hub import login
 
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
 
-# TODO: find way to truncate the generated text if too long for the model
 PromptFeature = Literal['zero-shot', 'few-shot', 'chain-of-thought', 'self-consistency', 'positive-feedback', 'negative-feedback']
 
 @dataclass
 class Fallacy:
-    """A dataclass to hold the fally text and their corresponding labels."""
+    """A dataclass to hold the fallicy text and corresponding labels."""
     fallacy_text: str
     labels: list[str]
     def __str__(self) -> str:
         text = self.fallacy_text.rstrip('\n')
         return f'Text: "{text}"\nLabel(s): "{self.labels}"'
 
-    def get_base_prompt(self, fallacy_options: list[str], model) -> str:
+    def get_base_prompt(self, fallacy_options: list[str]) -> str:
         """Return the base prompt"""
 
-        context = """An argument consists of an assertion called the conclusion and one or more assertions called premises, where the premises are intended to establish the truth of the conclusion. Premises or conclusions can be implicit in an argument. A fallacious argument is an argument where the premises do not entail the conclusion."""
-
-        # Create dynamic informal mapping based on the given fallacy options
+        # Create dynamic mapping based on the given fallacy options
         informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ', 'KK', 'LL', 'MM', 'NN', 'OO',
                              'PP', 'QQ', 'RR', 'SS', 'TT', 'UU', 'VV', 'WW', 'XX', 'YY', 'ZZ', 'AB', 'AC', 'AD']
-
         informal = {fallacy: f"{prefix} {fallacy}" for fallacy, prefix in zip(fallacy_options, informal_prefixes)}
-
         fallacy_options_strings = "\n".join([informal[fallacy] for fallacy in fallacy_options])
+
         question = f"Which one of these {len(fallacy_options)} fallacious argument types does the following text contain?"
-        unsure = f"Please choose an answer from {', '.join(informal_prefixes[:len(fallacy_options)])}."
+        choose_from = f"Please choose an answer from {', '.join(informal_prefixes[:len(fallacy_options)])}."
 
         prompt = f"""### Instruction:
 Below is an instruction that describes a task. Write a response that appropriately completes the request.
@@ -57,7 +51,7 @@ The potential fallacious argument types are:
 {question}
 Text: "{self.fallacy_text}"
 
-{unsure}
+{choose_from}
 ### Response:"""
 
         return prompt
@@ -66,12 +60,11 @@ Text: "{self.fallacy_text}"
         """Return a few-shot prompt"""
         informal_prefixes = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH', 'II', 'JJ', 'KK', 'LL', 'MM', 'NN', 'OO',
                              'PP', 'QQ', 'RR', 'SS', 'TT', 'UU', 'VV', 'WW', 'XX', 'YY', 'ZZ', 'AB', 'AC', 'AD']
-
         informal = {fallacy: f"{prefix} {fallacy}" for fallacy, prefix in zip(fallacy_options, informal_prefixes)}
-
         fallacy_options_strings = "\n".join([informal[fallacy] for fallacy in fallacy_options])
+
         question = f"Which one of these {len(fallacy_options)} fallacious argument types does the following text contain?"
-        unsure = f"Please choose an answer from {', '.join(informal_prefixes[:len(fallacy_options)])}."
+        choose_from = f"Please choose an answer from {', '.join(informal_prefixes[:len(fallacy_options)])}."
 
         prompt = f"""### Instruction:
 Below is an instruction that describes a task. Write a response that appropriately completes the request.
@@ -81,6 +74,7 @@ Definitions:
 The potential fallacious argument types are:
 {fallacy_options_strings}
 """
+        # Add examples
         prompt+= '\nNow consider the following samples as exaples: \n'
         global dev_dataset
         for _ in range(n_shot):
@@ -91,7 +85,7 @@ The potential fallacious argument types are:
             ### Response: {example.labels}\n"""
         prompt += f"""{question}
 Text: {self.fallacy_text}
-{unsure}
+{choose_from}
 ### Response:"""
         return prompt        
         
@@ -119,7 +113,7 @@ Text: {self.fallacy_text}
 
     def build_prompt(self, fallacy_options: list[str], prompt_features: list[PromptFeature], model, n_shot: int = 0) -> str:
         """Build a prompt based on the prompt features provided"""
-        prompt = self.get_base_prompt(fallacy_options, model)
+        prompt = self.get_base_prompt(fallacy_options)
         if 'zero-shot' in prompt_features:
             pass
         elif 'few-shot' in prompt_features:
@@ -226,14 +220,14 @@ def parse_args() -> argparse.Namespace:
         '--repeat',
         type=int,
         default=1,
-        help ='number of repetition for self-consistency'
+        help ='Number of repetitions for self-consistency'
     )
     parser.add_argument(
         '-cl',
         '--classification_level',
         default= 0,
         type=int,
-        help= 'the level of classification, 0: binary, 1: 4 classes, 2: more fine grained classes'
+        help= 'Level of classification, 0: binary, 1: 4 classes, 2: more fine grained classes'
     )
 
     # parse args
@@ -316,15 +310,6 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, 
 
     all_generated_texts = []
     for prompt in tqdm(prompts, desc='Prompting model', leave=False):
-        # generated_text = pipe(
-        #     prompt,
-        #     do_sample=do_sample,
-        #     temperature=temp,
-        #     top_k=top_k,
-        #     max_new_tokens=800
-        # )
-        # generated_text = generated_text[0]['generated_text']
-        # if self-consistency is true, repeat prompting
         generated_texts = []
         for _ in range(repeat):
             generated_text = pipe(
@@ -337,18 +322,12 @@ def prompt_model(pipe: pipeline, prompts: list[str], logpath: str, temp, top_k, 
             if "### Response:" in generated_text: generated_text = generated_text.split("### Response:")[-1]
             generated_texts.append(generated_text)
         all_generated_texts.append(generated_texts)
-        # temp code
-        # print generated text and the prompt
-        # print(f'Prompt: "{prompt}"\nGenerated text: "{generated_text[0]["generated_text"]}"\n')
-        # # print model answer to test the extract_model_answer function
-        # print(f'Model answer: "{extract_model_answer(generated_text[0]["generated_text"], ["slippery slope","X appeal to majority", "ad hominem", "appeal to (false) authority", "nothing"])}"\n')
 
-        #if "### Response:" in generated_texts[-1]: generated_texts[-1] = generated_texts[-1].split("### Response:")[-1]
     return all_generated_texts
 
 
 def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str], logpath: str, fallacy_options) -> None:
-    """Checks if the model prediction is correct, and prints the number of correct predictions."""
+    """Returns extracted answers from model outputs and whether they were correct."""
     correct = []
     model_answers = []
     
@@ -388,48 +367,11 @@ def evaluate_generated_texts(fallacies: list[Fallacy], generated_texts: list[str
 
     return correct, model_answers
 
-
-    # correct = []
-    # model_answers = []
-    
-    # if logpath:
-    #     outp = open(logpath, 'w')
-    # else:
-    #     outp = sys.stdout
-
-    # for fallacy, generated_text in zip(fallacies, generated_texts):
-    #     # write to logfile
-    #     outp.write(f'{fallacy}\nGenerated text: "{generated_text}"\n')
-
-    #     # extract the model answer
-    #     model_answer = extract_model_answer(generated_text, fallacy_options)
-    #     model_answers.append(model_answer)
-
-    #     # default answer is 'no fallacy'
-    #     # if not model_answer: model_answer = 'no fallacy'
-
-    #     # Check if the extracted answer is one of the labels
-    #     if model_answer and any(model_answer.lower() == label.lower() for label in fallacy.labels):
-    #         correct.append(1)
-    #         outp.write('-> correct\n\n')
-    #     else:
-    #         correct.append(0)
-    #         outp.write('-> incorrect\n\n')
-    
-    # if logpath:
-    #     outp.close()
-
-    # print(f'Got {sum(correct)} out of {len(fallacies)} correct')
-
-    # if logpath:
-    #     with open(logpath, 'a', encoding='utf-8') as outp:
-    #         outp.write(f'Got {sum(correct)} out of {len(fallacies)} correct\n')
-
-    # return correct, model_answers
         
 def extract_model_answer(generated_text, fallacy_options):
     """Extract the answer from generated text based on specified patterns or by frequency of occurrence."""
-    # Check if "### Response:" is in the generated text
+
+    # Check if "### Response:" is in the generated text and remove anything before that
     if "### Response:" in generated_text:
         response_text = generated_text.split("### Response:")[-1].strip()
     else:
@@ -441,7 +383,6 @@ def extract_model_answer(generated_text, fallacy_options):
     # Define the prefixes for fallacy options
     informal_prefixes = ['aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp',
                          'qq', 'rr', 'ss', 'tt', 'uu', 'vv', 'ww', 'xx', 'yy', 'zz', 'ab', 'ac', 'ad']
-
     informal_map = {prefix: fallacy.lower() for prefix, fallacy in zip(informal_prefixes, fallacy_options)}
 
     # Pattern to capture prefixed answers
@@ -463,7 +404,7 @@ def extract_model_answer(generated_text, fallacy_options):
         if fallacy_count[most_common_fallacy] > 0:
             return most_common_fallacy
 
-        # If no clear answer is found, check for the last word in the fallacy options
+    # If no clear answer is found, check for the last word in the fallacy options
     last_word_fallacy_count = {option.lower(): normalized_text.count(option.split()[-1].lower()) for option in
                                fallacy_options}
 
@@ -477,12 +418,10 @@ def extract_model_answer(generated_text, fallacy_options):
 
 
 def get_balanced_fallacies(fallacies, fallacy_options, n):
+    """Get a subset of samples from the dev set with an even number for each fallacy type."""
     balanced_fallacies = []
     counts = dict.fromkeys(fallacy_options,0)
     n_class = -(-n // len(fallacy_options))
-    # c = Counter([fallacy.labels[0] for fallacy in fallacies])
-    # for key, count in [(key, count) for key, count in c.items() if count < n_class]:
-    # min_c = min(c, key=c.get)
 
     r = list(range(len(fallacies)))
     random.shuffle(r)
@@ -493,10 +432,12 @@ def get_balanced_fallacies(fallacies, fallacy_options, n):
             n -= 1
         if n == 0: break
     random.shuffle(balanced_fallacies)
+
     return balanced_fallacies
 
 # https://stackoverflow.com/questions/13852700/create-file-but-if-name-exists-add-number
 def uniquify(path):
+    """Make sure not to overwrite file and instead change name."""
     filename, extension = os.path.splitext(path)
     counter = 1
 
@@ -507,6 +448,7 @@ def uniquify(path):
     return path
 
 def save_results(correct, model_answers, prompt_frame, prompts, generated_texts, fallacies, args):
+    """Save results to file."""
 
     results = {'prompt_frame': prompt_frame,
               'model': args.model,
@@ -522,7 +464,6 @@ def save_results(correct, model_answers, prompt_frame, prompts, generated_texts,
               'n_shot': args.n_shot
               }
     
-    # for few-shot and self-consistency, 'prompt', 'model_output', 'predicted_fallacy', and 'is_correct' should be lists
     results_details = {str(i+1):
                         {
                         'fallacy_text': fallacies[i].fallacy_text,
@@ -534,6 +475,7 @@ def save_results(correct, model_answers, prompt_frame, prompts, generated_texts,
                         }
                 for i in range(len(fallacies))}
     results.update(results_details)
+
     os.makedirs("results", exist_ok=True)
     run_name = f"{args.model.split('/')[-1]}-{args.classification_level}-{'-'.join(args.prompt_features)}"
     if 'few-shot' in args.prompt_features: run_name += f"-n{args.n_shot}"
@@ -549,7 +491,6 @@ def remove_duplicates(dev_data, test_data):
     """Remove the samples from the dev_dataset that also exist in test_dataset"""
     test_texts = set(fallacy.fallacy_text for fallacy in test_data)
     return [fallacy for fallacy in dev_data if fallacy.fallacy_text not in test_texts]
-    
 
 
 def main() -> None:
@@ -564,22 +505,19 @@ def main() -> None:
     fallacies = load_dataset(args.dataset, args.classification_level)
     global dev_dataset
     dev_dataset = load_dataset(dataset_path='data/dev/fallacy_corpus.jsonl', CL=args.classification_level)
-    if args.prompt_features=='few-shot':
-        "we will need dev_dataset to extract samples for few-shot"
-        
+
+    if args.prompt_features=='few-shot':        
         dev_dataset = remove_duplicates(dev_data=dev_dataset, test_data=fallacies)
         dev_dataset = get_balanced_fallacies(dev_dataset)
-    #fallacy_options = set(fallacy for fallacies in [fallacy.labels for fallacy in fallacies] for fallacy in fallacies)
+
     fallacy_options = set(pd.read_json('classification_level.jsonl', lines=True)['labels'][args.classification_level])
 
-    if args.samples < 9999: # so only if dev set and --samples is given
+    if args.samples < 9999: # This is only true if --samples is given and therefore if we are using the dev set
         fallacies = get_balanced_fallacies(fallacies, fallacy_options, args.samples)
         
     empty_fallacy = Fallacy(['FALLACY_TEXT'], ['FALLACY_LABEL'])
     prompt_frame = empty_fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot)
     prompts = [fallacy.build_prompt(fallacy_options, args.prompt_features, args.model, args.n_shot) for fallacy in fallacies]
-    # pipe = pipeline('text2text-generation', model=args.model, device=device)
-
 
     if args.model == 'mosaicml/mpt-7b-instruct':
         # Adjust the model configuration specifically for mosaicml/mpt-7b-instruct
@@ -590,6 +528,7 @@ def main() -> None:
         tokenizer = transformers.AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b")
         pipe = transformers.pipeline('text-generation', model=model, tokenizer=tokenizer, device=device)
     elif args.model == "meta-llama/Meta-Llama-3-8B-Instruct":
+        # Adjust the model configuration specifically for meta-llama/Meta-Llama-3-8B-Instruct
         login(token="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")
         config = transformers.AutoConfig.from_pretrained(args.model, trust_remote_code=True)
         config.init_device = device
@@ -597,7 +536,6 @@ def main() -> None:
         model = transformers.AutoModelForCausalLM.from_pretrained(args.model, config=config, torch_dtype=torch.bfloat16,
                                                                   trust_remote_code=True)
         pipe = transformers.pipeline('text-generation', model=model, tokenizer=tokenizer, device=device)
-
     else:
         # Default pipeline setup for other models
         pipe = transformers.pipeline('text2text-generation', model=args.model, use_fast=True, torch_dtype=torch.bfloat16, repetition_penalty=1.1)
@@ -611,7 +549,6 @@ def main() -> None:
 
     correct, model_answers = evaluate_generated_texts(fallacies, generated_texts, args.logpath, fallacy_options)
     save_results(correct, model_answers, prompt_frame, prompts, generated_texts, fallacies, args)
-    
     
 if __name__ == '__main__':
     main()
